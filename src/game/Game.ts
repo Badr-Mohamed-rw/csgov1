@@ -77,6 +77,8 @@ export class Game {
   private dragging = false
   private lastMX = 0
   private lastMY = 0
+  private mouseNX = 0
+  private mouseNY = 0
   private keys: Record<string, boolean> = {}
   private deathT = 0
 
@@ -232,14 +234,21 @@ export class Game {
       const s = 0.0023
       this.yaw -= e.movementX * s
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - e.movementY * s))
-    } else if (this.dragging) {
-      const s = 0.0038
-      const dx = e.clientX - this.lastMX
-      const dy = e.clientY - this.lastMY
-      this.lastMX = e.clientX
-      this.lastMY = e.clientY
-      this.yaw -= dx * s
-      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * s))
+    } else {
+      // запасной режим: позиция мыши относительно центра экрана
+      const hw = Math.max(1, window.innerWidth / 2)
+      const hh = Math.max(1, window.innerHeight / 2)
+      this.mouseNX = (e.clientX - hw) / hw
+      this.mouseNY = (e.clientY - hh) / hh
+      if (this.dragging) {
+        const s = 0.0038
+        const dx = e.clientX - this.lastMX
+        const dy = e.clientY - this.lastMY
+        this.lastMX = e.clientX
+        this.lastMY = e.clientY
+        this.yaw -= dx * s
+        this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * s))
+      }
     }
   }
   private onMouseDown = (e: MouseEvent) => {
@@ -271,6 +280,7 @@ export class Game {
     const locked = document.pointerLockElement === this.renderer.domElement
     if (this.locked && !locked && this.state === 'playing') this.pause()
     if (locked) this.dragging = false
+    else { this.mouseNX = 0; this.mouseNY = 0 }
     this.locked = locked
     this.hooks.lockedChange(locked)
   }
@@ -761,6 +771,15 @@ export class Game {
       if (this.state === 'playing') this.updatePlaying(dt)
       else if (this.state === 'dying') this.updateDying(dt)
       this.updateFx(dt)
+      if (this.state !== 'playing') this.updateNades(dt)
+    }
+
+    // скрываем системный курсор на время боя
+    const el = this.renderer.domElement
+    const wantCursor = this.state === 'playing' || this.state === 'dying' ? 'none' : ''
+    if (el.dataset.cur !== wantCursor) {
+      el.dataset.cur = wantCursor
+      el.style.cursor = wantCursor
     }
 
     this.renderer.render(this.scene, this.camera)
@@ -774,6 +793,16 @@ export class Game {
   }
 
   private updatePlaying(dt: number) {
+    // автоповорот: если браузер не отдал захват мыши — вращаем камеру
+    // пропорционально смещению курсора от центра экрана
+    if (!this.locked) {
+      const dz = 0.1
+      const ax = Math.abs(this.mouseNX) > dz ? (Math.sign(this.mouseNX) * (Math.abs(this.mouseNX) - dz)) / (1 - dz) : 0
+      const ay = Math.abs(this.mouseNY) > dz ? (Math.sign(this.mouseNY) * (Math.abs(this.mouseNY) - dz)) / (1 - dz) : 0
+      this.yaw -= ax * 2.7 * dt
+      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - ay * 1.9 * dt))
+    }
+
     // ---- movement ----
     const f = (this.keys['KeyW'] ? 1 : 0) - (this.keys['KeyS'] ? 1 : 0)
     const s = (this.keys['KeyD'] ? 1 : 0) - (this.keys['KeyA'] ? 1 : 0)

@@ -360,15 +360,15 @@ export default function App() {
           {/* controls hint */}
           {hint && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 border border-[#2b3844] bg-[#12181f]/85 px-4 py-1.5 text-[11px] font-semibold tracking-wider text-[#8b98a7]">
-              WASD — движение · ЛКМ/ПКМ — огонь · без захвата: зажми ЛКМ и веди — обзор · R — перезарядка · G — граната
+              WASD — движение · МЫШЬ — обзор · ЛКМ/ПКМ — огонь · R — перезарядка · G — граната · ESC — пауза
             </div>
           )}
           {/* look-around hint */}
           {!locked && screen === 'play' && (
             <div className="absolute left-1/2 top-[62%] -translate-x-1/2 border border-[#f2a33c]/60 bg-[#221409]/90 px-5 py-2 text-center text-sm font-bold tracking-[0.14em] text-[#f2a33c]">
-              ЗАЖМИТЕ ЛКМ И ВЕДИТЕ МЫШЬ — ОБЗОР
+              ВЕДИТЕ МЫШЬ ОТ ЦЕНТРА — ОБЗОР
               <div className="mt-0.5 text-[10px] font-semibold tracking-[0.2em] text-[#8b98a7]">
-                КЛИК ПО ИГРЕ — ЗАХВАТ МЫШИ, ЕСЛИ БРАУЗЕР ПОЗВОЛЯЕТ
+                ЛКМ / ПКМ — ОГОНЬ · R — ПЕРЕЗАРЯДКА · G — ГРАНАТА
               </div>
             </div>
           )}
@@ -418,7 +418,7 @@ export default function App() {
                 <div className="border-b border-[#2b3844] bg-[#182029] px-4 py-2 text-[11px] font-bold tracking-[0.3em] text-[#f2a33c]">УПРАВЛЕНИЕ</div>
                 <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 px-4 py-3 text-[12px] text-[#aab6c4]">
                   <span><span className="key">W</span> <span className="key">A</span> <span className="key">S</span> <span className="key">D</span></span><span>передвижение</span>
-                  <span><span className="key">МЫШЬ</span></span><span>обзор: захват по клику или зажми <span className="key">ЛКМ</span> и веди</span>
+                  <span><span className="key">МЫШЬ</span></span><span>обзор — просто ведите мышь, курсор в бою скрыт</span>
                   <span><span className="key">ЛКМ</span> <span className="key">ПКМ</span></span><span>огонь</span>
                   <span><span className="key">R</span></span><span>перезарядка</span>
                   <span><span className="key">G</span></span><span>граната</span>
