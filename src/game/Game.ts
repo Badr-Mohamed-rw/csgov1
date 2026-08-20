@@ -74,11 +74,9 @@ export class Game {
   private reloadT = 0
   private cooldown = 0
   private firing = false
-  private dragging = false
-  private lastMX = 0
-  private lastMY = 0
-  private mouseNX = 0
-  private mouseNY = 0
+  private lastCX = 0
+  private lastCY = 0
+  private mouseInit = false
   private keys: Record<string, boolean> = {}
   private deathT = 0
 
@@ -231,56 +229,48 @@ export class Game {
   private onMouseMove = (e: MouseEvent) => {
     if (this.state !== 'playing') return
     if (this.locked) {
-      const s = 0.0023
+      // захват мыши: движение 1:1
+      const s = 0.0032
       this.yaw -= e.movementX * s
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - e.movementY * s))
     } else {
-      // запасной режим: позиция мыши относительно центра экрана
-      const hw = Math.max(1, window.innerWidth / 2)
-      const hh = Math.max(1, window.innerHeight / 2)
-      this.mouseNX = (e.clientX - hw) / hw
-      this.mouseNY = (e.clientY - hh) / hh
-      if (this.dragging) {
-        const s = 0.0038
-        const dx = e.clientX - this.lastMX
-        const dy = e.clientY - this.lastMY
-        this.lastMX = e.clientX
-        this.lastMY = e.clientY
-        this.yaw -= dx * s
-        this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * s))
+      // без захвата: камера следует за движением мыши (по дельте)
+      if (!this.mouseInit) {
+        this.lastCX = e.clientX
+        this.lastCY = e.clientY
+        this.mouseInit = true
+        return
       }
+      const dx = e.movementX ?? e.clientX - this.lastCX
+      const dy = e.movementY ?? e.clientY - this.lastCY
+      this.lastCX = e.clientX
+      this.lastCY = e.clientY
+      const s = 0.0045
+      this.yaw -= dx * s
+      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * s))
     }
   }
   private onMouseDown = (e: MouseEvent) => {
     this.sfx.ensure()
     if (this.state !== 'playing') return
+    // ЛКМ — всегда огонь
     if (e.button === 0) {
-      if (this.locked) {
-        this.firing = true
-        this.tryShoot()
-      } else {
-        // запасной режим обзора: зажми ЛКМ и веди мышь
-        this.dragging = true
-        this.lastMX = e.clientX
-        this.lastMY = e.clientY
-        this.requestLock()
-      }
+      this.firing = true
+      this.tryShoot()
+      if (!this.locked) this.requestLock()
     } else if (e.button === 2) {
-      // огонь без захвата мыши
       this.firing = true
       this.tryShoot()
     }
   }
   private onMouseUp = (e: MouseEvent) => {
-    if (e.button === 0) this.dragging = false
     if (e.button === 0 || e.button === 2) this.firing = false
   }
 
   private onLockChange = () => {
     const locked = document.pointerLockElement === this.renderer.domElement
     if (this.locked && !locked && this.state === 'playing') this.pause()
-    if (locked) this.dragging = false
-    else { this.mouseNX = 0; this.mouseNY = 0 }
+    this.mouseInit = false
     this.locked = locked
     this.hooks.lockedChange(locked)
   }
@@ -339,7 +329,7 @@ export class Game {
     if (this.state !== 'playing') return
     this.state = 'paused'
     this.firing = false
-    this.dragging = false
+    this.mouseInit = false
     if (document.pointerLockElement) document.exitPointerLock()
     else this.hooks.lockedChange(false)
   }
@@ -793,16 +783,6 @@ export class Game {
   }
 
   private updatePlaying(dt: number) {
-    // автоповорот: если браузер не отдал захват мыши — вращаем камеру
-    // пропорционально смещению курсора от центра экрана
-    if (!this.locked) {
-      const dz = 0.1
-      const ax = Math.abs(this.mouseNX) > dz ? (Math.sign(this.mouseNX) * (Math.abs(this.mouseNX) - dz)) / (1 - dz) : 0
-      const ay = Math.abs(this.mouseNY) > dz ? (Math.sign(this.mouseNY) * (Math.abs(this.mouseNY) - dz)) / (1 - dz) : 0
-      this.yaw -= ax * 2.7 * dt
-      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - ay * 1.9 * dt))
-    }
-
     // ---- movement ----
     const f = (this.keys['KeyW'] ? 1 : 0) - (this.keys['KeyS'] ? 1 : 0)
     const s = (this.keys['KeyD'] ? 1 : 0) - (this.keys['KeyA'] ? 1 : 0)
