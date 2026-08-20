@@ -74,6 +74,9 @@ export class Game {
   private reloadT = 0
   private cooldown = 0
   private firing = false
+  private dragging = false
+  private lastMX = 0
+  private lastMY = 0
   private keys: Record<string, boolean> = {}
   private deathT = 0
 
@@ -217,34 +220,57 @@ export class Game {
     if (e.code === 'Space') e.preventDefault()
     this.keys[e.code] = true
     if (this.state !== 'playing') return
+    if (e.code === 'Escape' && !this.locked) { this.pause(); return }
     if (e.code === 'KeyR') this.startReload()
     if (e.code === 'KeyG') this.throwNade()
   }
   private onKeyUp = (e: KeyboardEvent) => { this.keys[e.code] = false }
 
   private onMouseMove = (e: MouseEvent) => {
-    if (!this.locked || this.state !== 'playing') return
-    const s = 0.0023
-    this.yaw -= e.movementX * s
-    this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - e.movementY * s))
+    if (this.state !== 'playing') return
+    if (this.locked) {
+      const s = 0.0023
+      this.yaw -= e.movementX * s
+      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - e.movementY * s))
+    } else if (this.dragging) {
+      const s = 0.0038
+      const dx = e.clientX - this.lastMX
+      const dy = e.clientY - this.lastMY
+      this.lastMX = e.clientX
+      this.lastMY = e.clientY
+      this.yaw -= dx * s
+      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * s))
+    }
   }
   private onMouseDown = (e: MouseEvent) => {
     this.sfx.ensure()
-    if (e.button !== 0) return
-    if (this.state === 'playing' && !this.locked) {
-      this.requestLock()
-      return
-    }
-    if (this.locked && this.state === 'playing') {
+    if (this.state !== 'playing') return
+    if (e.button === 0) {
+      if (this.locked) {
+        this.firing = true
+        this.tryShoot()
+      } else {
+        // запасной режим обзора: зажми ЛКМ и веди мышь
+        this.dragging = true
+        this.lastMX = e.clientX
+        this.lastMY = e.clientY
+        this.requestLock()
+      }
+    } else if (e.button === 2) {
+      // огонь без захвата мыши
       this.firing = true
       this.tryShoot()
     }
   }
-  private onMouseUp = (e: MouseEvent) => { if (e.button === 0) this.firing = false }
+  private onMouseUp = (e: MouseEvent) => {
+    if (e.button === 0) this.dragging = false
+    if (e.button === 0 || e.button === 2) this.firing = false
+  }
 
   private onLockChange = () => {
     const locked = document.pointerLockElement === this.renderer.domElement
     if (this.locked && !locked && this.state === 'playing') this.pause()
+    if (locked) this.dragging = false
     this.locked = locked
     this.hooks.lockedChange(locked)
   }
@@ -303,7 +329,9 @@ export class Game {
     if (this.state !== 'playing') return
     this.state = 'paused'
     this.firing = false
+    this.dragging = false
     if (document.pointerLockElement) document.exitPointerLock()
+    else this.hooks.lockedChange(false)
   }
 
   toMenu() {
