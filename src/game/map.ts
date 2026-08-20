@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-export interface AABB { minX: number; maxX: number; minZ: number; maxZ: number }
+export interface AABB { minX: number; maxX: number; minZ: number; maxZ: number; top: number }
 
 export interface MapData {
   solids: THREE.Mesh[]
@@ -9,6 +9,9 @@ export interface MapData {
   botSpawns: { x: number; z: number }[]
   playerSpawn: { x: number; z: number }
 }
+
+export const STEP_HEIGHT = 0.45   // автоподъём (поребрики, мешки)
+export const SNAP_DOWN = 0.6      // диапазон «прилипания» к опоре при падении
 
 function canvasTex(size: number, draw: (g: CanvasRenderingContext2D, s: number) => void, rx = 1, ry = 1) {
   const cv = document.createElement('canvas')
@@ -19,7 +22,7 @@ function canvasTex(size: number, draw: (g: CanvasRenderingContext2D, s: number) 
   t.wrapS = t.wrapT = THREE.RepeatWrapping
   t.repeat.set(rx, ry)
   t.colorSpace = THREE.SRGBColorSpace
-  t.anisotropy = 4
+  t.anisotropy = 8
   return t
 }
 
@@ -33,9 +36,12 @@ function speckle(g: CanvasRenderingContext2D, s: number, n: number, colors: stri
   g.globalAlpha = 1
 }
 
+/* --- движение с учётом высоты препятствий: низкие можно перешагнуть --- */
 export function collideMove(pos: THREE.Vector3, dx: number, dz: number, r: number, cols: AABB[], bounds?: AABB) {
+  const step = STEP_HEIGHT
   let nx = pos.x + dx
   for (const c of cols) {
+    if (c.top <= pos.y + step) continue
     if (nx + r > c.minX && nx - r < c.maxX && pos.z + r > c.minZ && pos.z - r < c.maxZ) {
       if (dx > 0) nx = Math.min(nx, c.minX - r)
       else if (dx < 0) nx = Math.max(nx, c.maxX + r)
@@ -44,6 +50,7 @@ export function collideMove(pos: THREE.Vector3, dx: number, dz: number, r: numbe
   pos.x = nx
   let nz = pos.z + dz
   for (const c of cols) {
+    if (c.top <= pos.y + step) continue
     if (pos.x + r > c.minX && pos.x - r < c.maxX && nz + r > c.minZ && nz - r < c.maxZ) {
       if (dz > 0) nz = Math.min(nz, c.minZ - r)
       else if (dz < 0) nz = Math.max(nz, c.maxZ + r)
@@ -56,222 +63,339 @@ export function collideMove(pos: THREE.Vector3, dx: number, dz: number, r: numbe
   }
 }
 
-/* Упрощённая схема Dust II:
-   юг — спавн T, три выхода: туннели B (запад), мид (центр), лонг A (восток).
-   мид с двойными дверями ведёт в CT-спавн, из него проходы на обе точки.   */
+/* --- высота опоры под игроком (земля = 0, верх ящика = его top) --- */
+export function groundSupport(x: number, z: number, feetY: number, r: number, cols: AABB[]): number {
+  let sup = 0
+  for (const c of cols) {
+    if (c.top <= feetY + SNAP_DOWN && c.top > sup &&
+      x + r > c.minX && x - r < c.maxX && z + r > c.minZ && z - r < c.maxZ) {
+      sup = c.top
+    }
+  }
+  return sup
+}
+
 export function buildMap(scene: THREE.Scene): MapData {
   const solids: THREE.Mesh[] = []
   const colliders: AABB[] = []
 
-  // ---------- textures ----------
+  /* ================= текстуры ================= */
+
   const sandTex = canvasTex(256, (g, s) => {
     g.fillStyle = '#c2a878'
     g.fillRect(0, 0, s, s)
-    speckle(g, s, 2600, ['#b09463', '#d4bc8c', '#a8895a', '#cbb283'], 0.5)
-    g.globalAlpha = 0.16
-    for (let i = 0; i < 14; i++) {
+    speckle(g, s, 3200, ['#b09463', '#d4bc8c', '#a8895a', '#cbb283', '#9b7f50'], 0.5)
+    // пятна
+    g.globalAlpha = 0.15
+    for (let i = 0; i < 16; i++) {
       g.fillStyle = i % 2 ? '#8f7448' : '#dcc596'
       g.beginPath()
-      g.ellipse(Math.random() * s, Math.random() * s, 20 + Math.random() * 46, 12 + Math.random() * 30, Math.random() * 3, 0, 7)
+      g.ellipse(Math.random() * s, Math.random() * s, 18 + Math.random() * 44, 10 + Math.random() * 28, Math.random() * 3, 0, 7)
       g.fill()
     }
-    g.globalAlpha = 1
-  }, 10, 10)
-
-  const plasterTex = canvasTex(256, (g, s) => {
-    g.fillStyle = '#c9b088'
-    g.fillRect(0, 0, s, s)
-    speckle(g, s, 1600, ['#b79d73', '#d8c39a', '#a3895f'], 0.42)
-    g.globalAlpha = 0.22
-    g.strokeStyle = '#8f7a55'
-    for (let y = 0; y < s; y += 30) { g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke() }
-    g.globalAlpha = 0.14
+    // трещины
+    g.globalAlpha = 0.2
+    g.strokeStyle = '#7d6238'
+    g.lineWidth = 1.2
     for (let i = 0; i < 9; i++) {
-      g.fillStyle = '#6e5b3d'
-      g.fillRect(Math.random() * s, Math.random() * s, 30 + Math.random() * 70, 4 + Math.random() * 12)
+      let x = Math.random() * s
+      let y = Math.random() * s
+      g.beginPath()
+      g.moveTo(x, y)
+      for (let k = 0; k < 6; k++) {
+        x += (Math.random() - 0.5) * 44
+        y += (Math.random() - 0.5) * 44
+        g.lineTo(x, y)
+      }
+      g.stroke()
+    }
+    // камешки
+    g.globalAlpha = 0.5
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = ['#8d7a52', '#a3906a', '#6f5c3a'][(Math.random() * 3) | 0]
+      g.beginPath()
+      g.ellipse(Math.random() * s, Math.random() * s, 1.6 + Math.random() * 2.6, 1.2 + Math.random() * 2, Math.random() * 3, 0, 7)
+      g.fill()
+    }
+    // следы колёс
+    g.globalAlpha = 0.1
+    g.strokeStyle = '#6e5a38'
+    g.lineWidth = 9
+    for (const off of [0, 26]) {
+      g.beginPath()
+      g.moveTo(off, 0)
+      g.bezierCurveTo(off + 40, s * 0.3, off - 30, s * 0.7, off + 20, s)
+      g.stroke()
     }
     g.globalAlpha = 1
-  }, 4, 2)
+  }, 9, 9)
 
-  const crateTex = canvasTex(128, (g, s) => {
+  // песчаниковая кладка (стены Dust II)
+  const brickTex = canvasTex(256, (g, s) => {
+    g.fillStyle = '#c9b183'
+    g.fillRect(0, 0, s, s)
+    const bh = 32
+    const bw = 64
+    for (let row = 0; row < s / bh; row++) {
+      const shift = row % 2 ? bw / 2 : 0
+      for (let col = -1; col < s / bw + 1; col++) {
+        const x = col * bw + shift
+        const y = row * bh
+        const tone = 0.9 + Math.random() * 0.2
+        g.fillStyle = `rgb(${(201 * tone) | 0},${(177 * tone) | 0},${(131 * tone) | 0})`
+        g.fillRect(x + 2, y + 2, bw - 4, bh - 4)
+        speckle(g, s, 26, ['#b39a6c', '#d8c39a', '#a58c5e'], 0.35)
+        g.globalAlpha = 0.25
+        g.fillStyle = '#8f7a52'
+        g.fillRect(x + 2, y + bh - 5, bw - 4, 3)
+        g.globalAlpha = 1
+      }
+      g.fillStyle = '#a08a5f'
+      g.fillRect(0, row * bh, s, 2)
+    }
+    // потёки и грязь
+    g.globalAlpha = 0.14
+    for (let i = 0; i < 10; i++) {
+      const x = Math.random() * s
+      g.fillStyle = '#6e5b3d'
+      g.fillRect(x, 0, 4 + Math.random() * 9, 30 + Math.random() * 90)
+    }
+    g.globalAlpha = 1
+  }, 5, 2)
+
+  const crateTex = canvasTex(256, (g, s) => {
     g.fillStyle = '#8a5c2e'
     g.fillRect(0, 0, s, s)
-    g.strokeStyle = '#5f3d1c'
-    g.lineWidth = 5
-    for (let y = 0; y <= s; y += 32) { g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke() }
-    speckle(g, s, 500, ['#7a4e24', '#9c6c3a', '#6b441f'], 0.5)
-    g.lineWidth = 8
-    g.strokeStyle = '#4e3115'
-    g.strokeRect(2, 2, s - 4, s - 4)
-    g.beginPath(); g.moveTo(0, 0); g.lineTo(s, s); g.moveTo(s, 0); g.lineTo(0, s)
-    g.lineWidth = 6; g.stroke()
+    // доски с текстурой дерева
+    for (let y = 0; y < s; y += 42) {
+      const tone = 0.92 + Math.random() * 0.16
+      g.fillStyle = `rgb(${(138 * tone) | 0},${(92 * tone) | 0},${(46 * tone) | 0})`
+      g.fillRect(0, y, s, 40)
+      g.globalAlpha = 0.3
+      g.strokeStyle = '#5f3d1c'
+      for (let k = 0; k < 7; k++) {
+        const yy = y + 4 + Math.random() * 34
+        g.beginPath()
+        g.moveTo(0, yy)
+        g.bezierCurveTo(s * 0.3, yy + 3, s * 0.6, yy - 3, s, yy + 1)
+        g.stroke()
+      }
+      g.globalAlpha = 1
+      g.fillStyle = '#4e3115'
+      g.fillRect(0, y + 39, s, 3)
+    }
+    speckle(g, s, 900, ['#7a4e24', '#9c6c3a', '#6b441f'], 0.4)
+    // уголки и диагонали
+    g.strokeStyle = '#3f2810'
+    g.lineWidth = 14
+    g.strokeRect(4, 4, s - 8, s - 8)
+    g.lineWidth = 10
+    g.beginPath()
+    g.moveTo(0, 0); g.lineTo(s, s)
+    g.moveTo(s, 0); g.lineTo(0, s)
+    g.stroke()
+    // трафарет
+    g.save()
+    g.translate(s / 2, s / 2)
+    g.rotate(-0.06)
+    g.font = '900 44px Rubik, sans-serif'
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.fillStyle = 'rgba(230,220,190,0.85)'
+    g.fillText('AMMO', 0, -8)
+    g.font = '700 22px Rubik, sans-serif'
+    g.fillStyle = 'rgba(120,40,30,0.8)'
+    g.fillText('7.62×39', 0, 30)
+    g.restore()
+    // гвозди
+    g.fillStyle = '#2c1c0a'
+    for (const [x, y] of [[14, 14], [s - 14, 14], [14, s - 14], [s - 14, s - 14], [s / 2, s / 2]]) {
+      g.beginPath()
+      g.arc(x, y, 4, 0, 7)
+      g.fill()
+    }
   }, 1, 1)
 
-  const doorTex = canvasTex(128, (g, s) => {
-    g.fillStyle = '#4c7a4f'
+  const containerTex = (base: string, logo: string) => canvasTex(256, (g, s) => {
+    g.fillStyle = base
     g.fillRect(0, 0, s, s)
-    speckle(g, s, 500, ['#3d6340', '#5c8a5e', '#2f4f33'], 0.5)
-    g.strokeStyle = '#2f4f33'
-    g.lineWidth = 8
-    g.strokeRect(6, 6, s - 12, s - 12)
-    g.fillStyle = '#2f4f33'
-    g.fillRect(12, s * 0.42, s - 24, 10)
-    g.fillStyle = '#d8c39a'
-    g.fillRect(s - 26, s * 0.5, 8, 8)
-  }, 1, 1)
+    // гофра
+    for (let x = 0; x < s; x += 16) {
+      g.fillStyle = 'rgba(0,0,0,0.32)'
+      g.fillRect(x, 0, 6, s)
+      g.fillStyle = 'rgba(255,255,255,0.12)'
+      g.fillRect(x + 8, 0, 3, s)
+    }
+    speckle(g, s, 1400, ['rgba(0,0,0,.4)', 'rgba(255,255,255,.12)'], 0.35)
+    // ржавые потёки
+    g.globalAlpha = 0.22
+    for (let i = 0; i < 12; i++) {
+      const x = Math.random() * s
+      g.fillStyle = '#6e3418'
+      g.fillRect(x, Math.random() * s * 0.4, 3 + Math.random() * 6, 30 + Math.random() * 80)
+    }
+    g.globalAlpha = 1
+    // логотип
+    g.font = '900 46px Rubik, sans-serif'
+    g.textAlign = 'center'
+    g.fillStyle = 'rgba(240,235,220,0.9)'
+    g.fillText(logo, s / 2, s / 2 + 14)
+    g.strokeStyle = 'rgba(240,235,220,0.5)'
+    g.lineWidth = 3
+    g.strokeRect(24, s / 2 - 40, s - 48, 86)
+    // рама
+    g.strokeStyle = 'rgba(0,0,0,0.55)'
+    g.lineWidth = 12
+    g.strokeRect(2, 2, s - 4, s - 4)
+  }, 2, 1)
+
+  const barrelTex = canvasTex(128, (g, s) => {
+    g.fillStyle = '#7a3a2a'
+    g.fillRect(0, 0, s, s)
+    speckle(g, s, 700, ['rgba(0,0,0,.4)', 'rgba(255,255,255,.1)'], 0.4)
+    // обручи
+    g.fillStyle = 'rgba(0,0,0,0.5)'
+    g.fillRect(0, 10, s, 7)
+    g.fillRect(0, s - 17, s, 7)
+    // опасная полоса
+    g.save()
+    g.fillStyle = '#d8b23a'
+    g.fillRect(0, s / 2 - 16, s, 32)
+    g.beginPath()
+    g.rect(0, s / 2 - 16, s, 32)
+    g.clip()
+    g.fillStyle = '#171310'
+    for (let x = -32; x < s + 32; x += 32) {
+      g.beginPath()
+      g.moveTo(x, s / 2 + 16)
+      g.lineTo(x + 16, s / 2 - 16)
+      g.lineTo(x + 32, s / 2 - 16)
+      g.lineTo(x + 16, s / 2 + 16)
+      g.fill()
+    }
+    g.restore()
+    g.font = '900 20px Rubik, sans-serif'
+    g.textAlign = 'center'
+    g.fillStyle = 'rgba(240,230,210,0.85)'
+    g.fillText('FUEL', s / 2, s / 2 - 26)
+  }, 2, 1)
 
   const matGround = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1 })
-  const matWall = new THREE.MeshStandardMaterial({ map: plasterTex, roughness: 0.95 })
+  const matWall = new THREE.MeshStandardMaterial({ map: brickTex, roughness: 0.95 })
   const matCrate = new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.9 })
-  const matDoor = new THREE.MeshStandardMaterial({ map: doorTex, roughness: 0.8, metalness: 0.15 })
+  const matRust = new THREE.MeshStandardMaterial({ map: containerTex('#9c4f28', 'MIRAGE'), roughness: 0.7, metalness: 0.3 })
+  const matOlive = new THREE.MeshStandardMaterial({ map: containerTex('#57613c', 'DUST'), roughness: 0.7, metalness: 0.3 })
+  const matBarrel = new THREE.MeshStandardMaterial({ map: barrelTex, roughness: 0.65, metalness: 0.35 })
   const matSandbag = new THREE.MeshStandardMaterial({ color: 0xb3a06f, roughness: 1 })
-  const matPlanter = new THREE.MeshStandardMaterial({ color: 0x5d7a45, roughness: 0.95 })
-  const matRoof = new THREE.MeshStandardMaterial({ color: 0x8d7a5c, roughness: 1 })
-  const matBarrel = new THREE.MeshStandardMaterial({ color: 0x7a3a2a, roughness: 0.75, metalness: 0.25 })
 
-  const addBox = (w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material, opts?: { collide?: boolean; solid?: boolean }) => {
-    const collide = opts?.collide !== false
-    const solid = opts?.solid !== false
+  const addBox = (w: number, h: number, d: number, x: number, y: number, z: number, mat: THREE.Material, collide = true) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat)
     m.position.set(x, y, z)
     m.castShadow = true
     m.receiveShadow = true
     scene.add(m)
-    if (solid) solids.push(m)
-    if (collide) colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 })
+    solids.push(m)
+    if (collide) colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, top: y + h / 2 })
     return m
   }
 
-  const barrel = (x: number, z: number) => {
-    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 1.15, 14), matBarrel)
-    b.position.set(x, 0.575, z)
-    b.castShadow = true
-    b.receiveShadow = true
-    scene.add(b)
-    solids.push(b)
-    colliders.push({ minX: x - 0.45, maxX: x + 0.45, minZ: z - 0.45, maxZ: z + 0.45 })
-  }
-
-  // ---------- ground ----------
+  // ground
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(64, 64), matGround)
   ground.rotation.x = -Math.PI / 2
   ground.receiveShadow = true
   scene.add(ground)
   solids.push(ground)
 
-  // ---------- perimeter ----------
+  // perimeter walls
   addBox(42, 5, 1, 0, 2.5, -20.5, matWall)
   addBox(42, 5, 1, 0, 2.5, 20.5, matWall)
   addBox(1, 5, 42, -20.5, 2.5, 0, matWall)
   addBox(1, 5, 42, 20.5, 2.5, 0, matWall)
 
-  // ---------- T spawn (south) north wall: gaps to B-tunnels / mid ----------
-  addBox(12, 3.6, 0.8, -9, 1.8, 13, matWall)      // x -15..-3
-  addBox(11, 3.6, 0.8, 8.5, 1.8, 13, matWall)     // x 3..14
+  // mid structures
+  addBox(10, 3, 0.9, -6, 1.5, -2, matWall)
+  addBox(0.9, 3, 9, 7, 1.5, 4, matWall)
+  addBox(7, 3, 0.9, 12, 1.5, -8, matWall)
+  addBox(0.9, 3, 7, -13, 1.5, 7, matWall)
 
-  // ---------- mid corridor walls (x -3..3, z -6..13) ----------
-  addBox(0.8, 3.6, 19, -3.4, 1.8, 3.5, matWall)
-  addBox(0.8, 3.6, 19, 3.4, 1.8, 3.5, matWall)
-
-  // ---------- CT spawn (x -7..7, z -16..-6) ----------
-  addBox(0.8, 3.6, 1, -7.4, 1.8, -15.5, matWall)
-  addBox(0.8, 3.6, 5, -7.4, 1.8, -8.5, matWall)   // opening z -15..-11 → B
-  addBox(0.8, 3.6, 1, 7.4, 1.8, -15.5, matWall)
-  addBox(0.8, 3.6, 5, 7.4, 1.8, -8.5, matWall)    // opening z -15..-11 → A
-  addBox(14, 3.6, 0.8, 0, 1.8, -16.4, matWall)
-
-  // ---------- site walls ----------
-  addBox(8, 3.6, 0.8, -11, 1.8, -11.6, matWall)   // B site south (tunnel exit x -19.5..-15)
-  addBox(7, 3.6, 0.8, 10.5, 1.8, -11.6, matWall)  // A site south (long opening x 14..19.5)
-
-  // ---------- long A west wall (x 14..19.5 corridor) ----------
-  addBox(0.8, 3.6, 26, 13.6, 1.8, 2, matWall)     // z -11..15, entry from T z 15..19.5
-
-  // ---------- B tunnels east wall ----------
-  addBox(0.8, 3.6, 25, -14.6, 1.8, 0.5, matWall)  // z -12..13
-
-  // ---------- roofs (no collision) ----------
-  addBox(5.6, 0.5, 16, -17.1, 3.55, -4, matRoof, { collide: false })   // B tunnels
-  addBox(5.4, 0.5, 7.4, -17, 3.55, -15.7, matRoof, { collide: false }) // B site west overhang
-
-  // ---------- dust2 landmarks ----------
-  // mid double doors
-  addBox(1.5, 2.8, 0.5, -1.5, 1.4, 2, matDoor)
-  addBox(1.5, 2.8, 0.5, 1.5, 1.4, 2, matDoor)
-  // long double doors (щель между створками — для пика, обход справа)
-  addBox(1.8, 2.8, 0.5, 15.5, 1.4, 2, matDoor)
-  addBox(1.8, 2.8, 0.5, 18.0, 1.4, 2, matDoor)
-  // «Xbox» crate in mid
-  addBox(1.4, 1.4, 1.4, 0, 0.7, 8.5, matCrate)
+  // shipping containers (запрыгнуть можно со стоящего рядом ящика)
+  addBox(6.4, 2.9, 2.7, -12, 1.45, -9, matRust)
+  addBox(6.4, 2.9, 2.7, 12, 1.45, 10, matOlive)
 
   // crates
-  addBox(1.4, 1.4, 1.4, -8, 0.7, 16.5, matCrate)
-  addBox(1.4, 1.4, 1.4, 6, 0.7, 17, matCrate)
-  addBox(1.4, 1.4, 1.4, 16.5, 0.7, 9, matCrate)
-  addBox(1.4, 1.4, 1.4, -3.5, 0.7, -13, matCrate)
-  addBox(1.4, 1.4, 1.4, 3.5, 0.7, -13.5, matCrate)
-  addBox(1.4, 1.4, 1.4, 16, 0.7, -17, matCrate)
-  addBox(1.4, 1.4, 1.4, 16, 2.1, -17, matCrate)
-  addBox(1.4, 1.4, 1.4, 12, 0.7, -18, matCrate)
-  addBox(1.4, 1.4, 1.4, -9, 0.7, -13.5, matCrate)
-  addBox(1.4, 1.4, 1.4, -17, 0.7, -18, matCrate)
-  addBox(1.4, 1.4, 1.4, 15, 0.7, -5, matCrate)
-
-  // goose (A site low platform)
-  addBox(2.2, 0.9, 2.2, 9.5, 0.45, -13, matSandbag)
-
-  // B site planter
-  addBox(2.4, 1.0, 2.4, -13, 0.5, -16, matPlanter)
-
-  // sandbags
-  addBox(2.4, 0.85, 0.8, 0, 0.42, -4, matSandbag)
-  addBox(2.4, 0.85, 0.8, 15.5, 0.42, -7.5, matSandbag)
-  addBox(0.8, 0.85, 2.4, -11, 0.42, -12.6, matSandbag)
-  addBox(2.4, 0.85, 0.8, -11.5, 0.42, 17.5, matSandbag)
+  const crate = (x: number, z: number, stack = 1) => {
+    addBox(1.4, 1.4, 1.4, x, 0.7, z, matCrate)
+    if (stack > 1) addBox(1.4, 1.4, 1.4, x, 2.1, z, matCrate)
+  }
+  crate(-3, 13, 2)
+  crate(4.2, 9)
+  crate(-14, -4)
+  crate(14, -13, 2)
+  crate(0.5, -6)
+  crate(9.5, 2)
+  crate(-8.5, 2.5)
+  crate(16.5, 5)
+  crate(-16.5, 13)
+  crate(6, -15)
+  crate(-5, -13)
+  crate(10.8, 8.6)   // ступенька к контейнеру
 
   // barrels
-  barrel(-12, 17.5)
-  barrel(11, 15.5)
-  barrel(-16.5, 8)
-  barrel(-17, -6)
-  barrel(18.5, 13)
+  const barrel = (x: number, z: number) => {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 1.15, 16), matBarrel)
+    b.position.set(x, 0.575, z)
+    b.castShadow = true
+    b.receiveShadow = true
+    scene.add(b)
+    solids.push(b)
+    colliders.push({ minX: x - 0.45, maxX: x + 0.45, minZ: z - 0.45, maxZ: z + 0.45, top: 1.15 })
+  }
+  barrel(-1.6, -11); barrel(-0.6, -11.4); barrel(10.5, 15); barrel(-10.5, 15.5); barrel(2.5, 1.5)
 
-  // ---------- site markers «A» / «B» ----------
-  const letterTex = (letter: string, color: string) => canvasTex(128, (g, s) => {
-    g.clearRect(0, 0, s, s)
-    g.fillStyle = color
-    g.font = 'bold 104px sans-serif'
-    g.textAlign = 'center'
-    g.textBaseline = 'middle'
-    g.fillText(letter, s / 2, s / 2 + 6)
-  }, 1, 1)
-  const plateA = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), new THREE.MeshBasicMaterial({ map: letterTex('A', '#f2a33c'), transparent: true }))
-  plateA.position.set(19.96, 2.4, -15)
-  plateA.rotation.y = -Math.PI / 2
-  scene.add(plateA)
-  solids.push(plateA)
-  const plateB = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), new THREE.MeshBasicMaterial({ map: letterTex('B', '#6fb7e8'), transparent: true }))
-  plateB.position.set(-19.96, 2.4, -15)
-  plateB.rotation.y = Math.PI / 2
-  scene.add(plateB)
-  solids.push(plateB)
+  // sandbag walls (низкие — перешагиваются автоматически)
+  addBox(2.6, 0.85, 0.8, -7, 0.42, 9, matSandbag)
+  addBox(2.6, 0.85, 0.8, 9, 0.42, -2.5, matSandbag)
+  addBox(0.8, 0.85, 2.6, -2, 0.42, 5.5, matSandbag)
 
-  // ---------- atmosphere ----------
-  const tunnelLamp1 = new THREE.PointLight(0xffb46b, 5, 11, 2)
-  tunnelLamp1.position.set(-17, 2.9, -4)
-  scene.add(tunnelLamp1)
-  const tunnelLamp2 = new THREE.PointLight(0xffb46b, 3.2, 9, 2)
-  tunnelLamp2.position.set(-17, 2.9, 8)
-  scene.add(tunnelLamp2)
-  const siteLamp = new THREE.PointLight(0xffd9a0, 3.4, 10, 2)
-  siteLamp.position.set(-14, 3, -15)
-  scene.add(siteLamp)
+  // scattered pebbles
+  const pebGeo = new THREE.BoxGeometry(0.09, 0.05, 0.09)
+  const pebMat = new THREE.MeshStandardMaterial({ color: 0x9b8a63, roughness: 1 })
+  for (let i = 0; i < 130; i++) {
+    const p = new THREE.Mesh(pebGeo, pebMat)
+    p.position.set((Math.random() - 0.5) * 38, 0.02, (Math.random() - 0.5) * 38)
+    p.rotation.y = Math.random() * Math.PI
+    const s = 0.5 + Math.random() * 1.6
+    p.scale.set(s, 0.4 + Math.random(), s)
+    p.receiveShadow = true
+    scene.add(p)
+  }
 
-  const sun = new THREE.Mesh(new THREE.CircleGeometry(6, 24), new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false }))
+  // sun disc + glow sprite
+  const sun = new THREE.Mesh(
+    new THREE.CircleGeometry(6, 24),
+    new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false })
+  )
   sun.position.set(-38, 34, -52)
   sun.lookAt(0, 0, 0)
   scene.add(sun)
+  const glowCv = document.createElement('canvas')
+  glowCv.width = glowCv.height = 128
+  const gg = glowCv.getContext('2d')!
+  const grad = gg.createRadialGradient(64, 64, 4, 64, 64, 64)
+  grad.addColorStop(0, 'rgba(255,240,200,0.9)')
+  grad.addColorStop(0.4, 'rgba(255,210,140,0.35)')
+  grad.addColorStop(1, 'rgba(255,190,120,0)')
+  gg.fillStyle = grad
+  gg.fillRect(0, 0, 128, 128)
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(glowCv), color: 0xffe6b8, transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  }))
+  glow.position.set(-38, 34, -51)
+  glow.scale.set(30, 30, 1)
+  scene.add(glow)
 
+  // drifting dust motes
   const dustGeo = new THREE.BufferGeometry()
   const dustPos = new Float32Array(220 * 3)
   for (let i = 0; i < 220; i++) {
@@ -284,114 +408,15 @@ export function buildMap(scene: THREE.Scene): MapData {
   dust.name = 'dust'
   scene.add(dust)
 
-  // ---------- небо, облака, пальмы, знаки сайтов ----------
-  const skyCv = document.createElement('canvas')
-  skyCv.width = 16
-  skyCv.height = 256
-  const sg = skyCv.getContext('2d')!
-  const grad = sg.createLinearGradient(0, 0, 0, 256)
-  grad.addColorStop(0, '#4e8cc4')
-  grad.addColorStop(0.45, '#9cc3dd')
-  grad.addColorStop(0.75, '#d8e3e4')
-  grad.addColorStop(1, '#e6d9b8')
-  sg.fillStyle = grad
-  sg.fillRect(0, 0, 16, 256)
-  const skyTex = new THREE.CanvasTexture(skyCv)
-  skyTex.colorSpace = THREE.SRGBColorSpace
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(150, 24, 12),
-    new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false })
-  )
-  scene.add(sky)
-
-  const cloudCv = document.createElement('canvas')
-  cloudCv.width = cloudCv.height = 128
-  const cg = cloudCv.getContext('2d')!
-  const rg = cg.createRadialGradient(64, 64, 8, 64, 64, 62)
-  rg.addColorStop(0, 'rgba(255,255,255,0.95)')
-  rg.addColorStop(0.6, 'rgba(255,255,255,0.45)')
-  rg.addColorStop(1, 'rgba(255,255,255,0)')
-  cg.fillStyle = rg
-  cg.fillRect(0, 0, 128, 128)
-  const cloudTex = new THREE.CanvasTexture(cloudCv)
-  const clouds = new THREE.Group()
-  clouds.name = 'clouds'
-  for (let i = 0; i < 6; i++) {
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent: true, opacity: 0.7, fog: false, depthWrite: false }))
-    const a = (i / 6) * Math.PI * 2 + Math.random()
-    sp.position.set(Math.cos(a) * (70 + Math.random() * 40), 34 + Math.random() * 18, Math.sin(a) * (70 + Math.random() * 40))
-    const s = 26 + Math.random() * 22
-    sp.scale.set(s, s * 0.45, 1)
-    clouds.add(sp)
-  }
-  scene.add(clouds)
-
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8a6844, roughness: 1 })
-  const leafMat = new THREE.MeshStandardMaterial({ color: 0x5f7d3a, roughness: 0.9, side: THREE.DoubleSide })
-  const palm = (x: number, z: number, h: number) => {
-    const g = new THREE.Group()
-    g.position.set(x, 0, z)
-    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.27, h, 7), trunkMat)
-    t.position.y = h / 2
-    t.rotation.z = (Math.random() - 0.5) * 0.14
-    t.castShadow = true
-    g.add(t)
-    for (let i = 0; i < 6; i++) {
-      const pivot = new THREE.Object3D()
-      pivot.position.y = h
-      pivot.rotation.y = (i / 6) * Math.PI * 2 + Math.random() * 0.4
-      const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.45, 2.6, 5), leafMat)
-      leaf.scale.set(0.38, 1, 1)
-      leaf.position.set(1.15, 0.2, 0)
-      leaf.rotation.z = -1.75 - Math.random() * 0.25
-      leaf.castShadow = true
-      pivot.add(leaf)
-      g.add(pivot)
-    }
-    scene.add(g)
-    colliders.push({ minX: x - 0.28, maxX: x + 0.28, minZ: z - 0.28, maxZ: z + 0.28 })
-  }
-  palm(-14, 13, 5.2)
-  palm(15.5, -13.5, 6)
-  palm(-12.5, -13.5, 4.6)
-  palm(10, 13.5, 5.6)
-
-  const signTex = (letter: string) => {
-    const cv = document.createElement('canvas')
-    cv.width = cv.height = 128
-    const g2 = cv.getContext('2d')!
-    g2.fillStyle = '#1c2228'
-    g2.fillRect(0, 0, 128, 128)
-    g2.strokeStyle = '#f2a33c'
-    g2.lineWidth = 8
-    g2.strokeRect(8, 8, 112, 112)
-    g2.fillStyle = '#f2e9d8'
-    g2.font = 'bold 84px sans-serif'
-    g2.textAlign = 'center'
-    g2.textBaseline = 'middle'
-    g2.fillText(letter, 64, 70)
-    const t = new THREE.CanvasTexture(cv)
-    t.colorSpace = THREE.SRGBColorSpace
-    return t
-  }
-  const signA = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), new THREE.MeshBasicMaterial({ map: signTex('A') }))
-  signA.position.set(-7, 3.4, -15.4)
-  scene.add(signA)
-  const signB = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), new THREE.MeshBasicMaterial({ map: signTex('B') }))
-  signB.position.set(15.4, 3.4, -2)
-  signB.rotation.y = -Math.PI / 2
-  scene.add(signB)
-
   return {
     solids,
     colliders,
-    bounds: { minX: -19.4, maxX: 19.4, minZ: -19.4, maxZ: 19.4 },
+    bounds: { minX: -19.4, maxX: 19.4, minZ: -19.4, maxZ: 19.4, top: 5 },
     botSpawns: [
-      { x: -12, z: -14 }, { x: -17.5, z: -13 }, { x: -17, z: 7 }, { x: -16.8, z: -7 },
-      { x: -3, z: -13 }, { x: 3, z: -13 }, { x: 0, z: -14.8 },
-      { x: 12, z: -14 }, { x: 16.5, z: -13 }, { x: 10, z: -17 },
-      { x: 16.5, z: 7 }, { x: 15.5, z: -4.5 }, { x: 0, z: 7 },
+      { x: -15, z: -15 }, { x: -6, z: -17 }, { x: 6, z: -17 }, { x: 15, z: -15 },
+      { x: -17, z: -3 }, { x: 17, z: -3 }, { x: -10, z: -9 }, { x: 10, z: -9 },
+      { x: -17, z: 12 }, { x: 17, z: 13 },
     ],
-    playerSpawn: { x: 2, z: 17 },
+    playerSpawn: { x: 0, z: 16 },
   }
 }

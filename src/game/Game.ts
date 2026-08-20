@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
-import { buildMap, collideMove, type MapData } from './map'
+import { buildMap, collideMove, groundSupport, type MapData } from './map'
 import { Bot, type BotHooks } from './bots'
 import { SFX } from './audio'
 
@@ -249,8 +249,9 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.06
 
-    this.scene.background = new THREE.Color(0x93a9bc)
-    this.scene.fog = new THREE.Fog(0xaeb9bd, 34, 95)
+    // градиентное небо: тёплый горизонт Dust II -> холодный зенит
+    this.scene.background = this.makeSkyTexture()
+    this.scene.fog = new THREE.Fog(0xc8bfa8, 36, 98)
 
     this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.05, 220)
     this.camera.rotation.order = 'YXZ'
@@ -270,6 +271,10 @@ export class Game {
     sun.shadow.bias = -0.0006
     this.scene.add(sun)
     this.scene.add(new THREE.AmbientLight(0x8899aa, 0.4))
+    // тёплый свет, отражённый от песка (заполняет тени)
+    const sandBounce = new THREE.DirectionalLight(0xd9b98a, 0.5)
+    sandBounce.position.set(20, 6, 24)
+    this.scene.add(sandBounce)
 
     this.map = buildMap(this.scene)
 
@@ -330,6 +335,25 @@ export class Game {
   /* ================= weapon ================= */
 
   /* ---------- процедурные текстуры оружия ---------- */
+
+  private makeSkyTexture(): THREE.CanvasTexture {
+    const cv = document.createElement('canvas')
+    cv.width = 16
+    cv.height = 512
+    const g = cv.getContext('2d')!
+    const grad = g.createLinearGradient(0, 0, 0, 512)
+    grad.addColorStop(0, '#4f7db5')     // зенит
+    grad.addColorStop(0.42, '#7fa8cc')
+    grad.addColorStop(0.66, '#b9c4c4')
+    grad.addColorStop(0.82, '#d8c9a8')  // тёплая дымка у горизонта
+    grad.addColorStop(1, '#e5d3ae')
+    g.fillStyle = grad
+    g.fillRect(0, 0, 16, 512)
+    const t = new THREE.CanvasTexture(cv)
+    t.colorSpace = THREE.SRGBColorSpace
+    t.magFilter = THREE.LinearFilter
+    return t
+  }
 
   private texCanvas(size: number, draw: (g: CanvasRenderingContext2D, s: number) => void): THREE.CanvasTexture {
     const cv = document.createElement('canvas')
@@ -417,11 +441,16 @@ export class Game {
     const muzzle = new THREE.Object3D()
     const css = (c: number) => `#${c.toString(16).padStart(6, '0')}`
 
-    // материалы с текстурами
-    const matMetal = new THREE.MeshStandardMaterial({ map: this.texMetal(css(spec.bodyMat === 'metal' ? spec.bodyColor : 0x2b2e33)), roughness: 0.46, metalness: 0.72 })
-    const matDark = new THREE.MeshStandardMaterial({ map: this.texMetal('#17191c'), roughness: 0.4, metalness: 0.8 })
-    const matWood = new THREE.MeshStandardMaterial({ map: this.texWood(), roughness: 0.66, metalness: 0.06 })
-    const matPoly = new THREE.MeshStandardMaterial({ map: this.texPolymer(css(spec.bodyColor)), roughness: 0.85, metalness: 0.1 })
+    // материалы с текстурами + bump-рельефом
+    const metalTex = this.texMetal(css(spec.bodyMat === 'metal' ? spec.bodyColor : 0x2b2e33))
+    const woodTex = this.texWood()
+    const polyTex = this.texPolymer(css(spec.bodyColor))
+    const matMetal = new THREE.MeshStandardMaterial({ map: metalTex, bumpMap: metalTex, bumpScale: 0.25, roughness: 0.46, metalness: 0.72 })
+    const matDark = new THREE.MeshStandardMaterial({ map: this.texMetal('#17191c'), bumpMap: this.texMetal('#17191c'), bumpScale: 0.2, roughness: 0.4, metalness: 0.8 })
+    const matWood = new THREE.MeshStandardMaterial({ map: woodTex, bumpMap: woodTex, bumpScale: 0.45, roughness: 0.66, metalness: 0.06 })
+    const matPoly = new THREE.MeshStandardMaterial({ map: polyTex, bumpMap: polyTex, bumpScale: 0.3, roughness: 0.85, metalness: 0.1 })
+    const gloveTex = this.texPolymer('#6e6848')
+    const matGlove = new THREE.MeshStandardMaterial({ map: gloveTex, bumpMap: gloveTex, bumpScale: 0.5, roughness: 0.92, metalness: 0.04 })
     const matBody = spec.bodyMat === 'wood' ? matWood : spec.bodyMat === 'poly' ? matPoly : matMetal
     const matBlade = new THREE.MeshStandardMaterial({ color: 0xd9dee3, roughness: 0.22, metalness: 0.95 })
 
@@ -443,6 +472,34 @@ export class Game {
     const [bw, bh, bd] = spec.body
     const barrelY = spec.barrelY ?? 0.015
 
+    // Руки в перчатках: кулак (ладонь + пальцы + большой палец) + предплечье к краю экрана
+    const fist = (x: number, y: number, z: number, rx = 0, fingersUp = false) => {
+      const hand = new THREE.Group()
+      const palm = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.075, 0.085), matGlove)
+      hand.add(palm)
+      const fingers = new THREE.Mesh(new THREE.BoxGeometry(0.084, fingersUp ? 0.05 : 0.045, 0.06), matGlove)
+      fingers.position.set(0, fingersUp ? 0.055 : -0.012, -0.06)
+      fingers.rotation.x = fingersUp ? 0.5 : -0.4
+      hand.add(fingers)
+      const knuckles = new THREE.Mesh(new THREE.BoxGeometry(0.084, 0.03, 0.05), matGlove)
+      knuckles.position.set(0, 0.035, -0.02)
+      hand.add(knuckles)
+      const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.028, 0.06), matGlove)
+      thumb.position.set(0.048, 0.008, -0.03)
+      hand.add(thumb)
+      const wrist = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.1), matGlove)
+      wrist.position.set(0.01, -0.005, 0.09)
+      hand.add(wrist)
+      const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.062, 0.26), matGlove)
+      forearm.position.set(0.05, -0.02, 0.26)
+      forearm.rotation.set(0.18, -0.15, 0)
+      hand.add(forearm)
+      hand.position.set(x, y, z)
+      hand.rotation.x = rx
+      g.add(hand)
+      return hand
+    }
+
     /* ---- нож ---- */
     if (spec.melee && spec.blade) {
       const bl = spec.blade
@@ -456,6 +513,7 @@ export class Game {
       box(bl.w * 0.3, 0.004, bl.len * 0.9, matDark, 0, 0.026, -bl.len / 2 - 0.015) // обух
       const tip = box(bl.w * 0.62, 0.007, bl.w * 0.62, matBlade, 0, 0.02, -bl.len - 0.01 - bl.w * 0.2, 0, Math.PI / 4)
       tip.scale.z = 0.55
+      fist(0, 0.0, 0.07, -1.15)   // кисть обхватывает рукоять
       muzzle.position.set(0, 0.02, -bl.len - 0.05)
       g.add(muzzle)
       return { group: g, muzzle }
@@ -481,6 +539,8 @@ export class Game {
       box(0.018, 0.04, 0.05, matDark, 0, -bh * 0.55, bd * 0.05)                  // спусковая скоба
       box(0.008, 0.03, 0.014, matDark, 0, -bh * 0.36, 0.02)                      // спусковой крючок
       box(bw * 0.5, 0.028, 0.014, matDark, 0, bh * 0.62, bd * 0.52, -0.5)        // молоток
+      fist(0, -bh * 1.0, bd * 0.26, -0.2)                                        // правая кисть
+      fist(0, -bh * 1.22, bd * 0.24, -0.1)                                       // левая (поддержка)
       muzzle.position.set(0, bh * 0.5, -bd / 2 - 0.055)
       g.add(muzzle)
       return { group: g, muzzle }
@@ -592,6 +652,19 @@ export class Game {
     if (spec.boltHandle) {
       box(0.012, 0.012, 0.07, matMetal, bw * 0.55, -0.005, bd * 0.1, 0, 0, 0.7)
       cyl(0.011, 0.011, 0.024, matMetal, bw * 0.58, -0.035, bd * 0.07)
+    }
+
+    /* ---- руки ---- */
+    const hg = spec.handguard
+    const gripZ = spec.bullpup ? -bd * 0.3 : bd * 0.3
+    const gripRx = spec.bullpup ? -0.55 : -0.22
+    fist(0, -bh / 2 - 0.075, gripZ, gripRx)                                   // правая — на рукояти
+    if (hg) {
+      fist(0, barrelY - hg[1] * 0.5 - 0.05, -bd / 2 - hg[2] * 0.55, 0.2, true) // левая — под цевьём
+    } else if (spec.bullpup) {
+      fist(0, -bh * 0.75, -bd * 0.05, 0.3, true)                               // левая — под корпусом
+    } else {
+      fist(0, -bh * 0.5, -bd * 0.42, 0.3, true)                                // левая — под цевьём/стволом
     }
 
     muzzle.position.set(0, barrelY, zEnd - 0.02)
@@ -1224,15 +1297,17 @@ export class Game {
       n.v.y -= 21 * dt
       n.m.position.addScaledVector(n.v, dt)
       const p = n.m.position
-      if (p.y < 0.09) {
-        p.y = 0.09
+      // опора: земля или крыша блока
+      const sup = groundSupport(p.x, p.z, p.y, 0.09, this.map.colliders)
+      if (n.v.y <= 0 && p.y <= sup + 0.09) {
+        p.y = sup + 0.09
         n.v.y = Math.abs(n.v.y) * 0.42
         n.v.x *= 0.72
         n.v.z *= 0.72
       }
-      // simple AABB bounce
+      // simple AABB bounce (только о стенки ниже верха гранаты)
       for (const c of this.map.colliders) {
-        if (p.x > c.minX - 0.09 && p.x < c.maxX + 0.09 && p.z > c.minZ - 0.09 && p.z < c.maxZ + 0.09 && p.y < 3) {
+        if (p.x > c.minX - 0.09 && p.x < c.maxX + 0.09 && p.z > c.minZ - 0.09 && p.z < c.maxZ + 0.09 && p.y < c.top) {
           const dxL = p.x - (c.minX - 0.09)
           const dxR = (c.maxX + 0.09) - p.x
           const dzN = p.z - (c.minZ - 0.09)
@@ -1460,16 +1535,26 @@ export class Game {
     this.vel.z += (wz - this.vel.z) * k
 
     if ((this.keys['Space'] || this.touchJump) && this.onGround) {
-      this.vel.y = 8.2
+      this.vel.y = 9.0
       this.onGround = false
       this.sfx.jump()
     }
     this.touchJump = false
-    this.vel.y -= 24 * dt
+    this.vel.y = Math.max(-18, this.vel.y - 24 * dt)
     this.pos.y += this.vel.y * dt
-    if (this.pos.y <= 0) { this.pos.y = 0; this.vel.y = 0; this.onGround = true }
 
+    // горизонтальное движение (низкие препятствия перешагиваются, collideMove учитывает высоту)
     collideMove(this.pos, this.vel.x * dt, this.vel.z * dt, 0.42, this.map.colliders, this.map.bounds)
+
+    // опора под игроком: земля или верх блока; прилипаем при падении
+    const sup = groundSupport(this.pos.x, this.pos.z, this.pos.y, 0.42, this.map.colliders)
+    if (this.vel.y <= 0 && this.pos.y <= sup) {
+      this.pos.y = sup
+      this.vel.y = 0
+      this.onGround = true
+    } else {
+      this.onGround = this.pos.y <= sup + 0.03
+    }
 
     const hSpeed = Math.hypot(this.vel.x, this.vel.z)
     if (this.onGround && hSpeed > 0.6) {

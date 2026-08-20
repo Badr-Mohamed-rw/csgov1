@@ -663,7 +663,7 @@ export default function App() {
                     <span><span className="key">R</span></span><span>перезарядка</span>
                     <span><span className="key">G</span></span><span>граната</span>
                     <span><span className="key">SHIFT</span></span><span>тихий шаг — точность выше</span>
-                    <span><span className="key">SPACE</span></span><span>прыжок</span>
+                    <span><span className="key">SPACE</span></span><span>прыжок — можно запрыгивать на ящики и контейнеры</span>
                     <span><span className="key">TAB</span></span><span>арсенал: AK-47, AWP, Deagle, P90 и нож</span>
                     <span><span className="key">1</span>–<span className="key">9</span> / колесо</span><span>быстрая смена оружия</span>
                     <span><span className="key">ПКМ</span></span><span>оптика AWP ×4</span>
@@ -676,7 +676,7 @@ export default function App() {
                     <span className="key">●</span><span>красная кнопка — огонь (удерживай)</span>
                     <span className="key">R</span><span>кнопка перезарядки</span>
                     <span className="key">G</span><span>кнопка гранаты</span>
-                    <span className="key">⌖</span><span>кнопка прыжка</span>
+                    <span className="key">⌖</span><span>кнопка прыжка — запрыгивай на ящики и контейнеры</span>
                     <span className="key">1–5</span><span>слоты оружия сверху — тап для выбора</span>
                     <span className="key">ОПТ</span><span>оптика AWP ×4</span>
                     <span className="key">▮▮</span><span>пауза (справа сверху)</span>
@@ -689,6 +689,7 @@ export default function App() {
                   <li>Карта — <span className="font-bold text-[#f2a33c]">Dust II</span>: лонг A, мид с дверями, туннели на B.</li>
                   <li>Арсенал — <span className="key">TAB</span>: AK-47, AWP, Deagle, P90 и нож. Колесо мыши листает стволы.</li>
                   <li><span className="font-bold text-[#eae6dc]">Хедшот</span> — урон ×4. AWP убивает с тела, <span className="key">ПКМ</span> — оптика ×4.</li>
+                  <li><span className="key">SPACE</span> — прыжок: запрыгивайте на ящики, бочки и контейнеры для обзора сверху.</li>
                   <li>Матч до <span className="font-bold text-[#f2a33c]">3 побед</span>, раунд — 1:40. Боты злеют с каждым раундом.</li>
                 </ul>
               </div>
