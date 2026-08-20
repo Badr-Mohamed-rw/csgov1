@@ -44,7 +44,7 @@ export const IS_TOUCH =
   typeof window !== 'undefined' &&
   (window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window)
 
-export type WeaponId = 'ak' | 'awp' | 'deagle' | 'p90' | 'knife'
+export type WeaponId = 'ak' | 'awp' | 'deagle' | 'p90' | 'uzi' | 'knife'
 
 export type SoundKind = 'pistol' | 'smg' | 'rifle' | 'sniper' | 'knife'
 
@@ -117,6 +117,18 @@ const WEAPONS: Record<WeaponId, WeaponDef> = {
       mag: { w: 0.04, h: 0.02, d: 0.06, tilt: -0.22, z: 0.1 },
     },
   },
+  uzi: {
+    name: 'UZI', short: 'UZI', cat: 'ПП', dmg: 13, cd: 0.072, mag: 32, res: 128,
+    auto: true, reload: 2.6, recoil: 0.01, recoilYaw: 0.009, kick: 0.075, base: 0.0055, grow: 0.02,
+    movePen: 0.015, recover: 3.6, speed: 1.05, reward: 600, sound: 'smg',
+    gun: {
+      body: [0.06, 0.082, 0.36], bodyMat: 'metal', bodyColor: 0x33363b,
+      barrelLen: 0.13, barrelR: 0.011, barrelY: 0.024,
+      mag: { w: 0.046, h: 0.17, d: 0.07, tilt: 0, z: 0.02 },
+      stock: { l: 0.2, drop: -0.028, mat: 'poly', color: 0x23262b },
+      boltHandle: true, muzzle: { len: 0.06, r: 0.017 },
+    },
+  },
   p90: {
     name: 'P90', short: 'P90', cat: 'ПП', dmg: 14, cd: 0.066, mag: 50, res: 100,
     auto: true, reload: 3.3, recoil: 0.008, recoilYaw: 0.007, kick: 0.07, base: 0.005, grow: 0.016,
@@ -138,7 +150,7 @@ const WEAPONS: Record<WeaponId, WeaponDef> = {
   },
 }
 
-export const WEAPON_ORDER: WeaponId[] = ['ak', 'awp', 'deagle', 'p90', 'knife']
+export const WEAPON_ORDER: WeaponId[] = ['ak', 'uzi', 'p90', 'awp', 'deagle', 'knife']
 
 
 interface Particle { m: THREE.Mesh; v: THREE.Vector3; g: number; life: number; max: number }
@@ -228,6 +240,7 @@ export class Game {
   private flashT = 0
   private gunLight: THREE.PointLight
   private boomLight: THREE.PointLight
+  private boomFlash: THREE.Sprite
   private boomT = 0
 
   private ray = new THREE.Raycaster()
@@ -284,6 +297,13 @@ export class Game {
     this.camera.add(this.gunLight)
     this.boomLight = new THREE.PointLight(0xff9040, 0, 22, 2)
     this.scene.add(this.boomLight)
+    // яркая вспышка взрыва
+    this.boomFlash = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this.makeGlowTex(), color: 0xffc890, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }))
+    this.boomFlash.scale.set(9, 9, 1)
+    this.scene.add(this.boomFlash)
 
     this.buildWeapons()
     this.flash = this.buildFlash(0.55)
@@ -685,6 +705,19 @@ export class Game {
     this.camera.add(root)
   }
 
+  private makeGlowTex(): THREE.CanvasTexture {
+    const cv = document.createElement('canvas')
+    cv.width = cv.height = 128
+    const g = cv.getContext('2d')!
+    const grad = g.createRadialGradient(64, 64, 2, 64, 64, 64)
+    grad.addColorStop(0, 'rgba(255,240,200,1)')
+    grad.addColorStop(0.35, 'rgba(255,180,90,0.8)')
+    grad.addColorStop(1, 'rgba(255,120,40,0)')
+    g.fillStyle = grad
+    g.fillRect(0, 0, 128, 128)
+    return new THREE.CanvasTexture(cv)
+  }
+
   private buildFlash(size: number): THREE.Mesh {
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffc97a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
@@ -694,6 +727,13 @@ export class Game {
     const p2 = new THREE.Mesh(new THREE.PlaneGeometry(size, size * 0.36), mat)
     p2.rotation.z = Math.PI / 2
     g.add(p1, p2)
+    // мягкое свечение вокруг вспышки
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: this.makeGlowTex(), color: 0xffb46a, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }))
+    glow.scale.set(size * 2.6, size * 2.6, 1)
+    g.add(glow)
     const holder = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01), mat)
     holder.add(g)
     return holder
@@ -1334,6 +1374,7 @@ export class Game {
     this.sfx.boom()
     this.boomLight.position.copy(at)
     this.boomLight.intensity = 260
+    this.boomFlash.position.copy(at)
     this.boomT = 0.3
     this.shake = Math.min(1.4, this.shake + 0.9)
     this.burst(at, 0xff9040, 26, 9, 0.7, 5)
@@ -1446,7 +1487,13 @@ export class Game {
     this.gunLight.intensity = Math.max(0, this.gunLight.intensity - dt * 260)
     if (this.boomT > 0) {
       this.boomT -= dt
-      this.boomLight.intensity = Math.max(0, this.boomT / 0.3) * 260
+      const k = Math.max(0, this.boomT / 0.3)
+      this.boomLight.intensity = k * 260
+      this.boomFlash.material.opacity = k * 0.95
+      const sc = 6 + (1 - k) * 9
+      this.boomFlash.scale.set(sc, sc, 1)
+    } else if (this.boomFlash.material.opacity > 0) {
+      this.boomFlash.material.opacity = 0
     }
     // recoil / shake decay
     this.recoilPitch *= Math.exp(-9 * dt)

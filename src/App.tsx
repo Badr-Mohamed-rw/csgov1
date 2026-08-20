@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Game, IS_TOUCH } from './game/Game'
 import type { BannerData, FeedEntry, HudData, OverData, RadarData, WheelState } from './game/Game'
 
-const WEAPON_LABELS = ['AK-47', 'AWP', 'DEAGLE', 'P90', 'НОЖ']
+const WEAPON_LABELS = ['AK-47', 'UZI', 'P90', 'AWP', 'DEAGLE', 'НОЖ']
 
 type Screen = 'menu' | 'play' | 'paused' | 'over'
 
@@ -582,7 +582,7 @@ export default function App() {
           {/* controls hint */}
           {hint && !isMobile && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 border border-[#2b3844] bg-[#12181f]/85 px-4 py-1.5 text-[11px] font-semibold tracking-wider text-[#8b98a7]">
-              WASD — движение · ЛКМ — огонь · TAB — арсенал · 1–5 / колесо — смена · ПКМ — оптика · R — перезарядка · G — граната
+              WASD — движение · ЛКМ — огонь · TAB — арсенал · 1–6 / колесо — смена · ПКМ — оптика · R — перезарядка · G — граната
             </div>
           )}
           {hint && isMobile && (
@@ -664,7 +664,7 @@ export default function App() {
                     <span><span className="key">G</span></span><span>граната</span>
                     <span><span className="key">SHIFT</span></span><span>тихий шаг — точность выше</span>
                     <span><span className="key">SPACE</span></span><span>прыжок — можно запрыгивать на ящики и контейнеры</span>
-                    <span><span className="key">TAB</span></span><span>арсенал: AK-47, AWP, Deagle, P90 и нож</span>
+                    <span><span className="key">TAB</span></span><span>арсенал: AK-47, UZI, P90, AWP, Deagle и нож</span>
                     <span><span className="key">1</span>–<span className="key">9</span> / колесо</span><span>быстрая смена оружия</span>
                     <span><span className="key">ПКМ</span></span><span>оптика AWP ×4</span>
                     <span><span className="key">ESC</span></span><span>пауза</span>
@@ -677,7 +677,7 @@ export default function App() {
                     <span className="key">R</span><span>кнопка перезарядки</span>
                     <span className="key">G</span><span>кнопка гранаты</span>
                     <span className="key">⌖</span><span>кнопка прыжка — запрыгивай на ящики и контейнеры</span>
-                    <span className="key">1–5</span><span>слоты оружия сверху — тап для выбора</span>
+                    <span className="key">1–6</span><span>слоты оружия сверху — тап для выбора</span>
                     <span className="key">ОПТ</span><span>оптика AWP ×4</span>
                     <span className="key">▮▮</span><span>пауза (справа сверху)</span>
                   </div>
@@ -686,8 +686,8 @@ export default function App() {
               <div className="border border-[#2b3844] bg-[#12181f]/95">
                 <div className="border-b border-[#2b3844] bg-[#182029] px-4 py-2 text-[11px] font-bold tracking-[0.3em] text-[#f2a33c]">БРИФИНГ</div>
                 <ul className="space-y-1.5 px-4 py-3 text-[12px] leading-relaxed text-[#aab6c4]">
-                  <li>Карта — <span className="font-bold text-[#f2a33c]">Dust II</span>: лонг A, мид с дверями, туннели на B.</li>
-                  <li>Арсенал — <span className="key">TAB</span>: AK-47, AWP, Deagle, P90 и нож. Колесо мыши листает стволы.</li>
+                  <li>Карта — <span className="font-bold text-[#f2a33c]">Dust II</span>: лонг A, мид, вышка с лестницей — заберитесь на неё или на контейнеры.</li>
+                  <li>Арсенал — <span className="key">TAB</span>: AK-47, UZI, P90, AWP, Deagle и нож. Колесо мыши листает стволы.</li>
                   <li><span className="font-bold text-[#eae6dc]">Хедшот</span> — урон ×4. AWP убивает с тела, <span className="key">ПКМ</span> — оптика ×4.</li>
                   <li><span className="key">SPACE</span> — прыжок: запрыгивайте на ящики, бочки и контейнеры для обзора сверху.</li>
                   <li>Матч до <span className="font-bold text-[#f2a33c]">3 побед</span>, раунд — 1:40. Боты злеют с каждым раундом.</li>
