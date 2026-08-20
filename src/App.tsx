@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { Game } from './game/Game'
+import { Game, IS_TOUCH } from './game/Game'
 import type { BannerData, FeedEntry, HudData, OverData, RadarData, WheelState } from './game/Game'
+
+const WEAPON_LABELS = ['AK-47', 'AWP', 'DEAGLE', 'P90', 'НОЖ']
 
 type Screen = 'menu' | 'play' | 'paused' | 'over'
 
@@ -32,6 +34,146 @@ const GunTag = () => (
   <span className="mx-1.5 rounded-sm border border-[#3a4a5c] bg-[#141c25] px-1.5 py-px text-[10px] font-semibold tracking-wider text-[#9fb2c6]">AK-47</span>
 )
 
+/* ---------- сенсорная кнопка ---------- */
+function TBtn({ children, className, onDown, onUp, title }: {
+  children: React.ReactNode; className?: string; onDown?: () => void; onUp?: () => void; title?: string
+}) {
+  return (
+    <button
+      aria-label={title}
+      className={`pointer-events-auto flex touch-none select-none items-center justify-center rounded-full border font-display transition-transform duration-75 active:scale-90 ${className ?? ''}`}
+      onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); onDown?.() }}
+      onPointerUp={(e) => { e.stopPropagation(); onUp?.() }}
+      onPointerCancel={(e) => { e.stopPropagation(); onUp?.() }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {children}
+    </button>
+  )
+}
+
+/* ---------- мобильное управление: джойстик + обзор + кнопки ---------- */
+function TouchControls({ game, activeWeapon, onSelectWeapon, onPause }: {
+  game: () => Game | null
+  activeWeapon: number
+  onSelectWeapon: (i: number) => void
+  onPause: () => void
+}) {
+  const layerRef = useRef<HTMLDivElement>(null)
+  const baseRef = useRef<HTMLDivElement>(null)
+  const knobRef = useRef<HTMLDivElement>(null)
+  const R = 54
+  const pts = useRef<Record<number, { role: 'move' | 'look'; ox: number; oy: number; lx: number; ly: number }>>({})
+
+  const hideJoy = () => {
+    game()?.setMoveInput(0, 0)
+    if (baseRef.current) baseRef.current.style.opacity = '0'
+    if (knobRef.current) knobRef.current.style.transform = 'translate(0px,0px)'
+  }
+
+  const onDown = (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse') return
+    const rect = layerRef.current!.getBoundingClientRect()
+    const role: 'move' | 'look' = e.clientX < rect.width * 0.42 ? 'move' : 'look'
+    if (role === 'move' && Object.values(pts.current).some((p) => p.role === 'move')) return
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    pts.current[e.pointerId] = { role, ox: e.clientX, oy: e.clientY, lx: e.clientX, ly: e.clientY }
+    if (role === 'move' && baseRef.current) {
+      baseRef.current.style.opacity = '1'
+      baseRef.current.style.left = `${e.clientX}px`
+      baseRef.current.style.top = `${e.clientY}px`
+    }
+  }
+  const onMove = (e: React.PointerEvent) => {
+    const p = pts.current[e.pointerId]
+    if (!p) return
+    if (p.role === 'move') {
+      let dx = e.clientX - p.ox
+      let dy = e.clientY - p.oy
+      const len = Math.hypot(dx, dy)
+      if (len > R) { dx = (dx / len) * R; dy = (dy / len) * R }
+      if (knobRef.current) knobRef.current.style.transform = `translate(${dx}px,${dy}px)`
+      game()?.setMoveInput(dx / R, -dy / R)
+    } else {
+      game()?.addLook(e.clientX - p.lx, e.clientY - p.ly)
+      p.lx = e.clientX
+      p.ly = e.clientY
+    }
+  }
+  const onUp = (e: React.PointerEvent) => {
+    const p = pts.current[e.pointerId]
+    if (!p) return
+    if (p.role === 'move') hideJoy()
+    delete pts.current[e.pointerId]
+  }
+
+  const g = game
+  return (
+    <>
+      {/* зоны джойстика (слева) и обзора (справа) */}
+      <div
+        ref={layerRef}
+        className="absolute inset-0 z-30 touch-none"
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+      />
+      {/* джойстик */}
+      <div ref={baseRef} className="pointer-events-none fixed z-30 -ml-[62px] -mt-[62px] h-[124px] w-[124px] rounded-full border-2 border-[#f2a33c]/40 bg-[#f2a33c]/5" style={{ opacity: 0 }}>
+        <div ref={knobRef} className="absolute left-1/2 top-1/2 -ml-[26px] -mt-[26px] h-[52px] w-[52px] rounded-full border-2 border-[#f2a33c]/70 bg-[#f2a33c]/25" />
+      </div>
+
+      {/* оружие (слоты сверху) */}
+      <div className="pointer-events-auto absolute left-1/2 top-16 z-40 flex -translate-x-1/2 gap-1">
+        {WEAPON_LABELS.map((w, i) => (
+          <TBtn
+            key={w}
+            title={w}
+            onDown={() => onSelectWeapon(i)}
+            className={`h-9 rounded-md px-2.5 text-[11px] tracking-wider ${
+              activeWeapon === i
+                ? 'border-[#f2a33c] bg-[#3a2a12]/90 text-[#f2a33c]'
+                : 'border-[#2b3844] bg-[#12181f]/80 text-[#8b98a7]'
+            }`}
+          >
+            <span className="skew-x-0">{i + 1}·{w}</span>
+          </TBtn>
+        ))}
+      </div>
+
+      {/* пауза (справа сверху) */}
+      <TBtn title="Пауза" onDown={onPause} className="absolute right-3 top-3 z-40 h-10 w-10 border-[#2b3844] bg-[#12181f]/85 text-[#c8d2dd]">
+        <svg viewBox="0 0 16 16" className="h-4 w-4 fill-current"><path d="M4 2h3v12H4zM9 2h3v12H9z" /></svg>
+      </TBtn>
+
+      {/* правый кластер действий */}
+      <div className="absolute bottom-5 right-4 z-40 flex flex-col items-end gap-3">
+        <div className="flex gap-3">
+          <TBtn title="Прицел" onDown={() => g()?.doScope()} className="h-12 w-12 border-[#2b3844] bg-[#12181f]/85 text-[10px] text-[#c8d2dd]">ОПТ</TBtn>
+          <TBtn title="Перезарядка" onDown={() => g()?.doReload()} className="h-12 w-12 border-[#2b3844] bg-[#12181f]/85 text-[10px] text-[#c8d2dd]">R</TBtn>
+          <TBtn title="Граната" onDown={() => g()?.doGrenade()} className="h-12 w-12 border-[#2b3844] bg-[#12181f]/85 text-[#c9d68a]">
+            <NadeIcon />
+          </TBtn>
+        </div>
+        <div className="flex items-end gap-4">
+          <TBtn title="Прыжок" onDown={() => g()?.doJump()} className="h-14 w-14 border-[#2b3844] bg-[#12181f]/85 text-[#c8d2dd]">
+            <svg viewBox="0 0 16 16" className="h-5 w-5 fill-current"><path d="M8 2 2 9h4v5h4V9h4z" /></svg>
+          </TBtn>
+          <TBtn
+            title="Огонь"
+            onDown={() => g()?.setFiring(true)}
+            onUp={() => g()?.setFiring(false)}
+            className="h-20 w-20 border-2 border-[#e0453a] bg-[#e0453a]/25 text-[#ff8a80]"
+          >
+            <svg viewBox="0 0 16 16" className="h-8 w-8 fill-current"><circle cx="8" cy="8" r="3" /><path d="M8 1v3M8 12v3M1 8h3M12 8h3" stroke="currentColor" strokeWidth="1.6" /></svg>
+          </TBtn>
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null)
   const gameRef = useRef<Game | null>(null)
@@ -48,6 +190,8 @@ export default function App() {
   const [scoped, setScoped] = useState(false)
   const [wheel, setWheel] = useState<WheelState | null>(null)
   const [melee, setMelee] = useState(false)
+  const [isMobile] = useState(() => IS_TOUCH)
+  const [activeWeapon, setActiveWeapon] = useState(2)
 
   // imperative HUD refs
   const hpRef = useRef<HTMLSpanElement>(null)
@@ -167,6 +311,8 @@ export default function App() {
         setNades(h.nades)
       }
       setTxt(weaponRef.current, h.weapon)
+      const wi = parseInt(h.weapon, 10) - 1
+      if (!Number.isNaN(wi)) setActiveWeapon((prev) => (prev === wi ? prev : wi))
       if (h.melee) {
         setTxt(magRef.current, '—')
         setTxt(resRef.current, '')
@@ -243,8 +389,8 @@ export default function App() {
   /* ============================== render ============================== */
 
   return (
-    <div className="font-body relative h-full w-full overflow-hidden bg-[#0d1218] text-[#eae6dc]">
-      <div ref={mountRef} className="absolute inset-0" />
+    <div className="font-body relative h-full w-full touch-none select-none overflow-hidden overscroll-none bg-[#0d1218] text-[#eae6dc]">
+      <div ref={mountRef} className="absolute inset-0 touch-none" />
 
       {/* ============ HUD ============ */}
       {(screen === 'play' || screen === 'paused') && (
@@ -384,13 +530,13 @@ export default function App() {
             </div>
           )}
 
-          {/* weapon hint */}
-          <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-1.5 border border-[#2b3844] bg-[#12181f]/85 px-3 py-1 text-[10px] font-bold tracking-[0.2em] text-[#8b98a7]">
+          {/* weapon hint (только десктоп) */}
+          <div className="absolute bottom-5 left-1/2 hidden -translate-x-1/2 items-center gap-1.5 border border-[#2b3844] bg-[#12181f]/85 px-3 py-1 text-[10px] font-bold tracking-[0.2em] text-[#8b98a7] md:flex">
             <span className="key">TAB</span> АРСЕНАЛ · <span className="key">1–9</span> / КОЛЕСО — СМЕНА
           </div>
 
           {/* bottom left: health / armor */}
-          <div className="absolute bottom-5 left-5 w-[240px]">
+          <div className="absolute bottom-4 left-3 w-40 md:bottom-5 md:left-5 md:w-[240px]">
             <div className="flex items-end gap-3 border border-[#2b3844] bg-[#12181f]/90 px-4 py-2.5">
               <svg viewBox="0 0 24 24" className="mb-1 h-6 w-6 fill-[#e0453a]"><path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6z" /></svg>
               <div className="flex-1">
@@ -434,13 +580,18 @@ export default function App() {
           </div>
 
           {/* controls hint */}
-          {hint && (
+          {hint && !isMobile && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 border border-[#2b3844] bg-[#12181f]/85 px-4 py-1.5 text-[11px] font-semibold tracking-wider text-[#8b98a7]">
               WASD — движение · ЛКМ — огонь · TAB — арсенал · 1–5 / колесо — смена · ПКМ — оптика · R — перезарядка · G — граната
             </div>
           )}
-          {/* look-around hint */}
-          {!locked && screen === 'play' && (
+          {hint && isMobile && (
+            <div className="absolute bottom-32 left-4 z-40 max-w-[46vw] border border-[#2b3844] bg-[#12181f]/85 px-3 py-1.5 text-[10px] font-semibold leading-relaxed tracking-wider text-[#8b98a7]">
+              СЛЕВА — ДЖОЙСТИК · СПРАВА — ОБЗОР<br />КРАСНАЯ КНОПКА — ОГОНЬ
+            </div>
+          )}
+          {/* look-around hint (только десктоп) */}
+          {!isMobile && !locked && screen === 'play' && (
             <div className="absolute left-1/2 top-[62%] -translate-x-1/2 border border-[#f2a33c]/60 bg-[#221409]/90 px-5 py-2 text-center text-sm font-bold tracking-[0.14em] text-[#f2a33c]">
               ДВИГАЙТЕ МЫШЬ — ОБЗОР · ЛКМ — ОГОНЬ
               <div className="mt-0.5 text-[10px] font-semibold tracking-[0.2em] text-[#8b98a7]">
@@ -455,6 +606,16 @@ export default function App() {
         </div>
       )}
 
+      {/* ============ МОБИЛЬНОЕ УПРАВЛЕНИЕ ============ */}
+      {isMobile && screen === 'play' && (
+        <TouchControls
+          game={() => gameRef.current}
+          activeWeapon={activeWeapon}
+          onSelectWeapon={(i) => gameRef.current?.switchWeaponByIndex(i)}
+          onPause={() => gameRef.current?.pause()}
+        />
+      )}
+
       {/* ============ MENU ============ */}
       {screen === 'menu' && (
         <div className="absolute inset-0 z-40">
@@ -463,14 +624,14 @@ export default function App() {
           <div className="hazard hazard-anim absolute top-0 left-0 h-2 w-full opacity-80" />
           <div className="hazard hazard-anim absolute bottom-0 left-0 h-2 w-full opacity-80" />
 
-          <div className="relative flex h-full flex-col justify-center gap-8 px-8 md:flex-row md:items-center md:justify-between md:px-16 lg:px-24">
+          <div className="relative flex h-full flex-col justify-start gap-8 overflow-y-auto px-6 py-10 md:flex-row md:items-center md:justify-between md:overflow-visible md:px-16 md:py-0 lg:px-24">
             {/* left: title */}
             <div className="max-w-xl">
               <div className="mb-4 flex items-center gap-3">
                 <span className="inline-block h-[3px] w-10 bg-[#f2a33c]" />
                 <span className="text-[11px] font-bold tracking-[0.4em] text-[#8b98a7]">БРАУЗЕРНЫЙ ШУТЕР · THREE.JS</span>
               </div>
-              <h1 className="title-glow font-display text-[88px] leading-[0.9] md:text-[120px]">
+              <h1 className="title-glow font-display text-[64px] leading-[0.9] md:text-[120px]">
                 CS<span className="text-[#f2a33c]">&nbsp;3D</span>
               </h1>
               <p className="mt-5 max-w-md text-[15px] leading-relaxed text-[#aab6c4]">
@@ -484,27 +645,43 @@ export default function App() {
                 <span className="inline-block skew-x-[8deg]">В БОЙ</span>
               </button>
               <div className="mt-4 text-[11px] font-semibold tracking-[0.25em] text-[#5f6d7d]">
-                КЛИК — ЗАХВАТ МЫШИ · ESC — ПАУЗА
+                {isMobile ? 'СЕНСОРНОЕ УПРАВЛЕНИЕ · ДЖОЙСТИК + ЗОНА ОБЗОРА' : 'КЛИК — ЗАХВАТ МЫШИ · ESC — ПАУЗА'}
               </div>
             </div>
 
             {/* right: panels */}
             <div className="flex w-full max-w-sm flex-col gap-4">
               <div className="border border-[#2b3844] bg-[#12181f]/95">
-                <div className="border-b border-[#2b3844] bg-[#182029] px-4 py-2 text-[11px] font-bold tracking-[0.3em] text-[#f2a33c]">УПРАВЛЕНИЕ</div>
-                <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 px-4 py-3 text-[12px] text-[#aab6c4]">
-                  <span><span className="key">W</span> <span className="key">A</span> <span className="key">S</span> <span className="key">D</span></span><span>передвижение</span>
-                  <span><span className="key">МЫШЬ</span></span><span>обзор — движение мыши, курсор в бою скрыт</span>
-                  <span><span className="key">ЛКМ</span></span><span>огонь из AK-47</span>
-                  <span><span className="key">R</span></span><span>перезарядка</span>
-                  <span><span className="key">G</span></span><span>граната</span>
-                  <span><span className="key">SHIFT</span></span><span>тихий шаг — точность выше</span>
-                  <span><span className="key">SPACE</span></span><span>прыжок</span>
-                  <span><span className="key">TAB</span></span><span>арсенал: AK-47, AWP, Deagle, P90 и нож</span>
-                  <span><span className="key">1</span>–<span className="key">9</span> / колесо</span><span>быстрая смена оружия</span>
-                  <span><span className="key">ПКМ</span></span><span>оптика AWP ×4</span>
-                  <span><span className="key">ESC</span></span><span>пауза</span>
+                <div className="border-b border-[#2b3844] bg-[#182029] px-4 py-2 text-[11px] font-bold tracking-[0.3em] text-[#f2a33c]">
+                  УПРАВЛЕНИЕ {isMobile && <span className="ml-1 text-[#6fb7e8]">· СЕНСОР</span>}
                 </div>
+                {!isMobile ? (
+                  <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 px-4 py-3 text-[12px] text-[#aab6c4]">
+                    <span><span className="key">W</span> <span className="key">A</span> <span className="key">S</span> <span className="key">D</span></span><span>передвижение</span>
+                    <span><span className="key">МЫШЬ</span></span><span>обзор — движение мыши, курсор в бою скрыт</span>
+                    <span><span className="key">ЛКМ</span></span><span>огонь из AK-47</span>
+                    <span><span className="key">R</span></span><span>перезарядка</span>
+                    <span><span className="key">G</span></span><span>граната</span>
+                    <span><span className="key">SHIFT</span></span><span>тихий шаг — точность выше</span>
+                    <span><span className="key">SPACE</span></span><span>прыжок</span>
+                    <span><span className="key">TAB</span></span><span>арсенал: AK-47, AWP, Deagle, P90 и нож</span>
+                    <span><span className="key">1</span>–<span className="key">9</span> / колесо</span><span>быстрая смена оружия</span>
+                    <span><span className="key">ПКМ</span></span><span>оптика AWP ×4</span>
+                    <span><span className="key">ESC</span></span><span>пауза</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 px-4 py-3 text-[12px] text-[#aab6c4]">
+                    <span className="key">◐</span><span>левая зона — джойстик движения</span>
+                    <span className="key">◑</span><span>правая зона — обзор (веди пальцем)</span>
+                    <span className="key">●</span><span>красная кнопка — огонь (удерживай)</span>
+                    <span className="key">R</span><span>кнопка перезарядки</span>
+                    <span className="key">G</span><span>кнопка гранаты</span>
+                    <span className="key">⌖</span><span>кнопка прыжка</span>
+                    <span className="key">1–5</span><span>слоты оружия сверху — тап для выбора</span>
+                    <span className="key">ОПТ</span><span>оптика AWP ×4</span>
+                    <span className="key">▮▮</span><span>пауза (справа сверху)</span>
+                  </div>
+                )}
               </div>
               <div className="border border-[#2b3844] bg-[#12181f]/95">
                 <div className="border-b border-[#2b3844] bg-[#182029] px-4 py-2 text-[11px] font-bold tracking-[0.3em] text-[#f2a33c]">БРИФИНГ</div>

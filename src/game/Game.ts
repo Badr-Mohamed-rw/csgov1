@@ -40,6 +40,10 @@ const NAMES = ['Феникс', 'Гюрза', 'Кобра', 'Шакал', 'Кор
 const ROUND_TIME = 100
 const WINS_NEEDED = 3
 
+export const IS_TOUCH =
+  typeof window !== 'undefined' &&
+  (window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window)
+
 export type WeaponId = 'ak' | 'awp' | 'deagle' | 'p90' | 'knife'
 
 export type SoundKind = 'pistol' | 'smg' | 'rifle' | 'sniper' | 'knife'
@@ -179,6 +183,13 @@ export class Game {
   private cooldown = 0
   private firing = false
 
+  // сенсорный ввод (мобильные)
+  private joyX = 0
+  private joyY = 0
+  private lookDX = 0
+  private lookDY = 0
+  private touchJump = false
+
   // weapons
   private equipped: WeaponId = 'deagle'
   private ammo: Record<WeaponId, { mag: number; res: number }> = {} as Record<WeaponId, { mag: number; res: number }>
@@ -228,8 +239,9 @@ export class Game {
     this.container = container
     this.hooks = hooks
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
+    this.renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH, powerPreference: 'high-performance' })
+    // на телефонах снижаем плотность пикселей ради стабильного FPS
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.3 : 1.75))
     this.renderer.setSize(container.clientWidth, container.clientHeight)
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -249,7 +261,7 @@ export class Game {
     const sun = new THREE.DirectionalLight(0xffeccc, 2.6)
     sun.position.set(-26, 38, -18)
     sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
+    sun.shadow.mapSize.set(IS_TOUCH ? 1024 : 2048, IS_TOUCH ? 1024 : 2048)
     sun.shadow.camera.left = -34
     sun.shadow.camera.right = 34
     sun.shadow.camera.top = 34
@@ -272,8 +284,8 @@ export class Game {
     this.flash = this.buildFlash(0.55)
     this.weaponMuzzles[this.equipped].add(this.flash)
 
-    // pools
-    for (let i = 0; i < 24; i++) {
+    // pools (на телефонах — меньше объектов)
+    for (let i = 0; i < (IS_TOUCH ? 12 : 24); i++) {
       const m = new THREE.Mesh(
         new THREE.BoxGeometry(1, 1, 1),
         new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })
@@ -286,7 +298,7 @@ export class Game {
     // гильзы
     const shellGeo = new THREE.BoxGeometry(0.016, 0.05, 0.016)
     const shellMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.85, roughness: 0.35 })
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < (IS_TOUCH ? 10 : 22); i++) {
       const m = new THREE.Mesh(shellGeo, shellMat)
       m.visible = false
       this.scene.add(m)
@@ -294,7 +306,7 @@ export class Game {
     }
     // декали попаданий
     const decalGeo = new THREE.PlaneGeometry(0.1, 0.1)
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < (IS_TOUCH ? 16 : 40); i++) {
       const m = new THREE.Mesh(decalGeo, new THREE.MeshBasicMaterial({ color: 0x14100a, transparent: true, opacity: 0, depthWrite: false }))
       m.visible = false
       this.scene.add(m)
@@ -304,7 +316,10 @@ export class Game {
     // постобработка: bloom + тонмаппинг
     this.composer = new EffectComposer(this.renderer)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.5, 0.5, 0.82))
+    // bloom — дорогая операция, на телефонах отключаем для плавности
+    if (!IS_TOUCH) {
+      this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.5, 0.5, 0.82))
+    }
     this.composer.addPass(new OutputPass())
 
     this.pos.set(this.map.playerSpawn.x, 0, this.map.playerSpawn.z)
@@ -760,6 +775,36 @@ export class Game {
     if (this.scoped) this.toggleScope(false)
     if (document.pointerLockElement) document.exitPointerLock()
   }
+
+  /* ================= сенсорный ввод (мобильные) ================= */
+
+  /** Виртуальный джойстик: x — стрейф (-1..1, вправо положит.), y — вперёд (-1..1, вверх положит.) */
+  setMoveInput(x: number, y: number) {
+    this.joyX = Math.max(-1, Math.min(1, x))
+    this.joyY = Math.max(-1, Math.min(1, y))
+  }
+
+  /** Зона обзора: накопить дельту движения пальца */
+  addLook(dx: number, dy: number) {
+    this.lookDX += dx
+    this.lookDY += dy
+  }
+
+  setFiring(on: boolean) {
+    if (this.state !== 'playing') { this.firing = false; return }
+    this.firing = on
+    if (on) this.tryShoot()
+  }
+
+  doJump() { if (this.state === 'playing') this.touchJump = true }
+  doReload() { if (this.state === 'playing') this.startReload() }
+  doGrenade() { if (this.state === 'playing') this.throwNade() }
+  doScope() { if (this.state === 'playing' && this.equipped === 'awp') this.toggleScope() }
+
+  switchWeaponByIndex(i: number) {
+    if (i >= 0 && i < WEAPON_ORDER.length) this.switchTo(WEAPON_ORDER[i])
+  }
+  cycleWeaponPub(dir: number) { this.cycleWeapon(dir) }
 
   dispose() {
     cancelAnimationFrame(this.raf)
@@ -1237,7 +1282,7 @@ export class Game {
     for (let i = 0; i < count; i++) {
       let p = this.particles.find((q) => q.life <= 0)
       if (!p) {
-        if (this.particles.length > 280) return
+        if (this.particles.length > (IS_TOUCH ? 120 : 280)) return
         const m = new THREE.Mesh(
           new THREE.BoxGeometry(0.06, 0.06, 0.06),
           new THREE.MeshBasicMaterial({ color, transparent: true })
@@ -1387,9 +1432,19 @@ export class Game {
   }
 
   private updatePlaying(dt: number) {
-    // ---- movement ----
-    const f = (this.keys['KeyW'] ? 1 : 0) - (this.keys['KeyS'] ? 1 : 0)
-    const s = (this.keys['KeyD'] ? 1 : 0) - (this.keys['KeyA'] ? 1 : 0)
+    // ---- обзор с сенсорной зоны (накопленные дельты) ----
+    if (this.lookDX !== 0 || this.lookDY !== 0) {
+      const sens = 0.0042
+      this.yaw -= this.lookDX * sens
+      this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - this.lookDY * sens))
+      this.lookDX = 0
+      this.lookDY = 0
+    }
+
+    // ---- movement (клавиатура + виртуальный джойстик) ----
+    const clamp = (v: number) => Math.max(-1, Math.min(1, v))
+    const f = clamp(((this.keys['KeyW'] ? 1 : 0) - (this.keys['KeyS'] ? 1 : 0)) + this.joyY)
+    const s = clamp(((this.keys['KeyD'] ? 1 : 0) - (this.keys['KeyA'] ? 1 : 0)) + this.joyX)
     const walk = !!this.keys['ShiftLeft'] || !!this.keys['ShiftRight']
     const wcfg = WEAPONS[this.equipped]
     const speed = (walk ? 2.6 : 5.7) * wcfg.speed * (this.scoped ? 0.42 : 1)
@@ -1404,11 +1459,12 @@ export class Game {
     this.vel.x += (wx - this.vel.x) * k
     this.vel.z += (wz - this.vel.z) * k
 
-    if (this.keys['Space'] && this.onGround) {
+    if ((this.keys['Space'] || this.touchJump) && this.onGround) {
       this.vel.y = 8.2
       this.onGround = false
       this.sfx.jump()
     }
+    this.touchJump = false
     this.vel.y -= 24 * dt
     this.pos.y += this.vel.y * dt
     if (this.pos.y <= 0) { this.pos.y = 0; this.vel.y = 0; this.onGround = true }
