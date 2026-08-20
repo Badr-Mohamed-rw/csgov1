@@ -40,28 +40,31 @@ const NAMES = ['Феникс', 'Гюрза', 'Кобра', 'Шакал', 'Кор
 const ROUND_TIME = 100
 const WINS_NEEDED = 3
 
-export type WeaponId =
-  | 'glock' | 'usp' | 'p250' | 'deagle' | 'r8'
-  | 'mp9' | 'mac10' | 'ump45' | 'p90'
-  | 'ak' | 'm4a4' | 'famas' | 'aug'
-  | 'awp' | 'ssg08'
-  | 'nova' | 'negev'
-  | 'zeus' | 'knife'
+export type WeaponId = 'ak' | 'awp' | 'deagle' | 'p90' | 'knife'
 
-export type SoundKind = 'pistol' | 'smg' | 'rifle' | 'sniper' | 'shotgun' | 'lmg' | 'zeus' | 'knife'
-type GunKind = 'pistol' | 'smg' | 'rifle' | 'sniper' | 'shotgun' | 'lmg' | 'zeus' | 'knife'
+export type SoundKind = 'pistol' | 'smg' | 'rifle' | 'sniper' | 'knife'
 
 export interface GunSpec {
-  kind: GunKind
-  body: number      // длина ствольной коробки
-  bodyH: number     // высота
+  body: [number, number, number]       // приёмник: ширина, высота, длина
+  bodyMat: 'metal' | 'poly' | 'wood'
   bodyColor: number
-  accent: number    // цевьё/приклад
-  barrel: number    // длина ствола
-  stock: number     // длина приклада (0 = нет)
-  mag: number       // длина магазина (0 = нет)
-  scope?: number    // кратность оптики
-  drum?: boolean    // дисковый магазин
+  barrelLen: number; barrelR: number; barrelY?: number
+  handguard?: [number, number, number]; handguardMat?: 'wood' | 'poly'
+  stock?: { l: number; drop: number; mat: 'wood' | 'poly'; color: number }
+  scope?: { len: number; r: number; zoom: number }
+  mag?: { w: number; h: number; d: number; tilt: number; x?: number; y?: number; z?: number }
+  grip?: boolean
+  gasTube?: boolean
+  boltHandle?: boolean
+  bipod?: boolean
+  serrations?: boolean
+  topMag?: boolean
+  bullpup?: boolean
+  muzzle?: { len: number; r: number }
+  pistol?: boolean
+  slideColor?: number
+  melee?: boolean
+  blade?: { len: number; w: number }
 }
 
 interface WeaponDef {
@@ -72,44 +75,67 @@ interface WeaponDef {
   speed: number; reward: number; sound: SoundKind; melee?: boolean; gun: GunSpec
 }
 
-const C = { gunmetal: 0x26282c, dark: 0x1b1d20, wood: 0x7c4a24, green: 0x42503a, tan: 0x8a7a55, blue: 0x3a4a5c, olive: 0x57613c, black: 0x151619, steel: 0x5a6066 }
-
 const WEAPONS: Record<WeaponId, WeaponDef> = {
-  // пистолеты
-  glock:  { name: 'Glock-18', short: 'GLOCK', cat: 'Пистолет', dmg: 19, cd: 0.15, mag: 20, res: 120, auto: false, reload: 2.2, recoil: 0.02,  recoilYaw: 0.005, kick: 0.07, base: 0.004, grow: 0.04, movePen: 0.03, recover: 3.0, speed: 1.03, reward: 300, sound: 'pistol', gun: { kind: 'pistol', body: 0.30, bodyH: 0.062, bodyColor: C.dark, accent: C.dark, barrel: 0.07, stock: 0, mag: 0.15 } },
-  usp:    { name: 'USP-S', short: 'USP-S', cat: 'Пистолет', dmg: 23, cd: 0.17, mag: 12, res: 24, auto: false, reload: 2.2, recoil: 0.022, recoilYaw: 0.004, kick: 0.06, base: 0.0035, grow: 0.035, movePen: 0.03, recover: 3.2, speed: 1.03, reward: 300, sound: 'pistol', gun: { kind: 'pistol', body: 0.30, bodyH: 0.062, bodyColor: C.gunmetal, accent: C.gunmetal, barrel: 0.10, stock: 0, mag: 0.14 } },
-  p250:   { name: 'P250', short: 'P250', cat: 'Пистолет', dmg: 21, cd: 0.16, mag: 13, res: 26, auto: false, reload: 2.2, recoil: 0.021, recoilYaw: 0.005, kick: 0.065, base: 0.004, grow: 0.04, movePen: 0.03, recover: 3.0, speed: 1.03, reward: 300, sound: 'pistol', gun: { kind: 'pistol', body: 0.28, bodyH: 0.060, bodyColor: C.steel, accent: C.dark, barrel: 0.07, stock: 0, mag: 0.13 } },
-  deagle: { name: 'Desert Eagle', short: 'DEAGLE', cat: 'Пистолет', dmg: 53, cd: 0.24, mag: 7, res: 35, auto: false, reload: 2.2, recoil: 0.038, recoilYaw: 0.006, kick: 0.1, base: 0.004, grow: 0.05, movePen: 0.035, recover: 2.4, speed: 1.02, reward: 300, sound: 'pistol', gun: { kind: 'pistol', body: 0.32, bodyH: 0.066, bodyColor: C.dark, accent: C.gunmetal, barrel: 0.09, stock: 0, mag: 0.16 } },
-  r8:     { name: 'R8 Revolver', short: 'R8', cat: 'Пистолет', dmg: 60, cd: 0.5, mag: 8, res: 8, auto: false, reload: 3.0, recoil: 0.045, recoilYaw: 0.006, kick: 0.12, base: 0.003, grow: 0.045, movePen: 0.03, recover: 2.2, speed: 1.02, reward: 300, sound: 'pistol', gun: { kind: 'pistol', body: 0.30, bodyH: 0.07, bodyColor: C.steel, accent: C.dark, barrel: 0.11, stock: 0, mag: 0 } },
-  // пистолеты-пулемёты
-  mp9:    { name: 'MP9', short: 'MP9', cat: 'ПП', dmg: 16, cd: 0.07, mag: 30, res: 120, auto: true, reload: 2.1, recoil: 0.009, recoilYaw: 0.007, kick: 0.09, base: 0.0045, grow: 0.018, movePen: 0.012, recover: 3.6, speed: 1.04, reward: 600, sound: 'smg', gun: { kind: 'smg', body: 0.34, bodyH: 0.07, bodyColor: C.dark, accent: C.gunmetal, barrel: 0.10, stock: 0.12, mag: 0.16 } },
-  mac10:  { name: 'MAC-10', short: 'MAC-10', cat: 'ПП', dmg: 15, cd: 0.075, mag: 30, res: 100, auto: true, reload: 2.6, recoil: 0.01, recoilYaw: 0.009, kick: 0.08, base: 0.0055, grow: 0.02, movePen: 0.014, recover: 3.4, speed: 1.04, reward: 600, sound: 'smg', gun: { kind: 'smg', body: 0.30, bodyH: 0.08, bodyColor: C.gunmetal, accent: C.dark, barrel: 0.08, stock: 0.14, mag: 0.17 } },
-  ump45:  { name: 'UMP-45', short: 'UMP-45', cat: 'ПП', dmg: 19, cd: 0.09, mag: 25, res: 100, auto: true, reload: 3.5, recoil: 0.011, recoilYaw: 0.007, kick: 0.09, base: 0.005, grow: 0.019, movePen: 0.013, recover: 3.5, speed: 1.03, reward: 600, sound: 'smg', gun: { kind: 'smg', body: 0.36, bodyH: 0.075, bodyColor: C.dark, accent: C.gunmetal, barrel: 0.12, stock: 0.16, mag: 0.15 } },
-  p90:    { name: 'P90', short: 'P90', cat: 'ПП', dmg: 14, cd: 0.066, mag: 50, res: 100, auto: true, reload: 3.3, recoil: 0.008, recoilYaw: 0.007, kick: 0.07, base: 0.005, grow: 0.016, movePen: 0.013, recover: 3.8, speed: 1.04, reward: 600, sound: 'smg', gun: { kind: 'smg', body: 0.40, bodyH: 0.09, bodyColor: C.tan, accent: C.dark, barrel: 0.08, stock: 0, mag: 0.1, drum: true } },
-  // винтовки
-  ak:     { name: 'AK-47', short: 'AK-47', cat: 'Винтовка', dmg: 27, cd: 0.096, mag: 30, res: 90, auto: true, reload: 2.5, recoil: 0.013, recoilYaw: 0.008, kick: 0.16, base: 0.0035, grow: 0.02, movePen: 0.006, recover: 4.2, speed: 1.0, reward: 300, sound: 'rifle', gun: { kind: 'rifle', body: 0.44, bodyH: 0.085, bodyColor: C.gunmetal, accent: C.wood, barrel: 0.30, stock: 0.24, mag: 0.20 } },
-  m4a4:   { name: 'M4A4', short: 'M4A4', cat: 'Винтовка', dmg: 23, cd: 0.09, mag: 30, res: 90, auto: true, reload: 3.1, recoil: 0.011, recoilYaw: 0.007, kick: 0.13, base: 0.0032, grow: 0.018, movePen: 0.006, recover: 4.4, speed: 1.0, reward: 300, sound: 'rifle', gun: { kind: 'rifle', body: 0.44, bodyH: 0.08, bodyColor: C.dark, accent: C.gunmetal, barrel: 0.32, stock: 0.22, mag: 0.17 } },
-  famas:  { name: 'FAMAS', short: 'FAMAS', cat: 'Винтовка', dmg: 21, cd: 0.096, mag: 25, res: 90, auto: true, reload: 3.3, recoil: 0.01, recoilYaw: 0.007, kick: 0.12, base: 0.0034, grow: 0.018, movePen: 0.006, recover: 4.2, speed: 1.0, reward: 300, sound: 'rifle', gun: { kind: 'rifle', body: 0.48, bodyH: 0.08, bodyColor: C.blue, accent: C.dark, barrel: 0.26, stock: 0.14, mag: 0.16 } },
-  aug:    { name: 'AUG', short: 'AUG', cat: 'Винтовка', dmg: 22, cd: 0.096, mag: 30, res: 90, auto: true, reload: 3.8, recoil: 0.011, recoilYaw: 0.007, kick: 0.12, base: 0.003, grow: 0.018, movePen: 0.006, recover: 4.2, speed: 0.99, reward: 300, sound: 'rifle', gun: { kind: 'rifle', body: 0.46, bodyH: 0.085, bodyColor: C.olive, accent: C.dark, barrel: 0.24, stock: 0.20, mag: 0.16, scope: 2 } },
-  // снайперские
-  awp:    { name: 'AWP', short: 'AWP', cat: 'Снайперка', dmg: 115, cd: 1.35, mag: 5, res: 30, auto: false, reload: 3.7, recoil: 0.09, recoilYaw: 0.004, kick: 0.05, base: 0.0012, grow: 0.03, movePen: 0, recover: 1.1, speed: 0.88, reward: 100, sound: 'sniper', gun: { kind: 'sniper', body: 0.60, bodyH: 0.085, bodyColor: C.green, accent: C.green, barrel: 0.50, stock: 0.26, mag: 0.12, scope: 4 } },
-  ssg08:  { name: 'SSG 08', short: 'SSG 08', cat: 'Снайперка', dmg: 70, cd: 1.2, mag: 10, res: 90, auto: false, reload: 3.0, recoil: 0.07, recoilYaw: 0.004, kick: 0.06, base: 0.0013, grow: 0.028, movePen: 0, recover: 1.4, speed: 0.95, reward: 100, sound: 'sniper', gun: { kind: 'sniper', body: 0.56, bodyH: 0.075, bodyColor: C.blue, accent: C.dark, barrel: 0.48, stock: 0.24, mag: 0.10, scope: 4 } },
-  // дробовик / пулемёт
-  nova:   { name: 'Nova', short: 'NOVA', cat: 'Дробовик', dmg: 56, cd: 0.9, mag: 8, res: 32, auto: false, reload: 3.5, recoil: 0.05, recoilYaw: 0.01, kick: 0.14, base: 0.008, grow: 0.06, movePen: 0.02, recover: 2.0, speed: 0.97, reward: 900, sound: 'shotgun', gun: { kind: 'shotgun', body: 0.50, bodyH: 0.08, bodyColor: C.gunmetal, accent: C.wood, barrel: 0.40, stock: 0.24, mag: 0 } },
-  negev:  { name: 'Negev', short: 'NEGEV', cat: 'Пулемёт', dmg: 16, cd: 0.06, mag: 100, res: 200, auto: true, reload: 5.5, recoil: 0.012, recoilYaw: 0.01, kick: 0.11, base: 0.008, grow: 0.024, movePen: 0.01, recover: 2.8, speed: 0.92, reward: 800, sound: 'lmg', gun: { kind: 'lmg', body: 0.48, bodyH: 0.09, bodyColor: C.gunmetal, accent: C.dark, barrel: 0.34, stock: 0.22, mag: 0.14, drum: true } },
-  // особое
-  zeus:   { name: 'Zeus x27', short: 'ZEUS', cat: 'Особое', dmg: 195, cd: 2.0, mag: 1, res: 0, auto: false, reload: 0, recoil: 0.02, recoilYaw: 0.004, kick: 0.1, base: 0.002, grow: 0.02, movePen: 0, recover: 2.0, speed: 1.03, reward: 0, sound: 'zeus', gun: { kind: 'zeus', body: 0.26, bodyH: 0.07, bodyColor: C.steel, accent: 0xd8b400, barrel: 0.06, stock: 0, mag: 0.14 } },
-  knife:  { name: 'M48 Tomahawk', short: 'НОЖ', cat: 'Ближний бой', dmg: 60, cd: 0.45, mag: 0, res: 0, auto: true, reload: 0, recoil: 0, recoilYaw: 0, kick: 0.05, base: 0, grow: 0, movePen: 0, recover: 5, speed: 1.06, reward: 1500, sound: 'knife', melee: true, gun: { kind: 'knife', body: 0.30, bodyH: 0.05, bodyColor: C.dark, accent: C.wood, barrel: 0.22, stock: 0, mag: 0 } },
+  ak: {
+    name: 'AK-47', short: 'AK-47', cat: 'Винтовка', dmg: 27, cd: 0.096, mag: 30, res: 90,
+    auto: true, reload: 2.5, recoil: 0.013, recoilYaw: 0.008, kick: 0.16, base: 0.0035, grow: 0.02,
+    movePen: 0.006, recover: 4.2, speed: 1.0, reward: 300, sound: 'rifle',
+    gun: {
+      body: [0.072, 0.092, 0.5], bodyMat: 'metal', bodyColor: 0x3a3d42,
+      barrelLen: 0.3, barrelR: 0.016, barrelY: 0.022,
+      handguard: [0.066, 0.07, 0.24], handguardMat: 'wood',
+      stock: { l: 0.24, drop: 0.02, mat: 'wood', color: 0x8a5a2c },
+      mag: { w: 0.056, h: 0.2, d: 0.1, tilt: 0.24, z: 0.04 },
+      grip: true, gasTube: true, muzzle: { len: 0.07, r: 0.02 },
+    },
+  },
+  awp: {
+    name: 'AWP', short: 'AWP', cat: 'Снайперка', dmg: 115, cd: 1.35, mag: 5, res: 30,
+    auto: false, reload: 3.7, recoil: 0.09, recoilYaw: 0.004, kick: 0.05, base: 0.0012, grow: 0.03,
+    movePen: 0, recover: 1.1, speed: 0.88, reward: 100, sound: 'sniper',
+    gun: {
+      body: [0.06, 0.088, 0.6], bodyMat: 'poly', bodyColor: 0x4a563f,
+      barrelLen: 0.5, barrelR: 0.014, barrelY: 0.015,
+      stock: { l: 0.26, drop: 0.035, mat: 'poly', color: 0x4a563f },
+      scope: { len: 0.26, r: 0.03, zoom: 4 },
+      mag: { w: 0.05, h: 0.11, d: 0.08, tilt: 0.08, z: 0.02 },
+      grip: true, bipod: true, boltHandle: true, muzzle: { len: 0.1, r: 0.024 },
+    },
+  },
+  deagle: {
+    name: 'Desert Eagle', short: 'DEAGLE', cat: 'Пистолет', dmg: 53, cd: 0.24, mag: 7, res: 35,
+    auto: false, reload: 2.2, recoil: 0.038, recoilYaw: 0.006, kick: 0.1, base: 0.004, grow: 0.05,
+    movePen: 0.035, recover: 2.4, speed: 1.02, reward: 300, sound: 'pistol',
+    gun: {
+      body: [0.046, 0.05, 0.26], bodyMat: 'metal', bodyColor: 0x9ba1a8,
+      barrelLen: 0.05, barrelR: 0.013, barrelY: 0.02,
+      pistol: true, slideColor: 0xc9ced4, serrations: true,
+      mag: { w: 0.04, h: 0.02, d: 0.06, tilt: -0.22, z: 0.1 },
+    },
+  },
+  p90: {
+    name: 'P90', short: 'P90', cat: 'ПП', dmg: 14, cd: 0.066, mag: 50, res: 100,
+    auto: true, reload: 3.3, recoil: 0.008, recoilYaw: 0.007, kick: 0.07, base: 0.005, grow: 0.016,
+    movePen: 0.013, recover: 3.8, speed: 1.04, reward: 600, sound: 'smg',
+    gun: {
+      body: [0.068, 0.11, 0.5], bodyMat: 'poly', bodyColor: 0x5d6844,
+      barrelLen: 0.14, barrelR: 0.012, barrelY: 0.005,
+      bullpup: true, topMag: true, muzzle: { len: 0.05, r: 0.02 },
+    },
+  },
+  knife: {
+    name: 'M48 Tomahawk', short: 'НОЖ', cat: 'Ближний бой', dmg: 60, cd: 0.45, mag: 0, res: 0,
+    auto: true, reload: 0, recoil: 0, recoilYaw: 0, kick: 0.05, base: 0, grow: 0,
+    movePen: 0, recover: 5, speed: 1.06, reward: 1500, sound: 'knife', melee: true,
+    gun: {
+      body: [0.026, 0.03, 0.13], bodyMat: 'poly', bodyColor: 0x33383e,
+      barrelLen: 0, barrelR: 0, blade: { len: 0.17, w: 0.036 },
+    },
+  },
 }
 
-export const WEAPON_ORDER: WeaponId[] = [
-  'ak', 'm4a4', 'famas', 'aug',
-  'awp', 'ssg08',
-  'mp9', 'mac10', 'ump45', 'p90',
-  'nova', 'negev',
-  'glock', 'usp', 'p250', 'deagle', 'r8',
-  'zeus', 'knife',
-]
+export const WEAPON_ORDER: WeaponId[] = ['ak', 'awp', 'deagle', 'p90', 'knife']
+
 
 interface Particle { m: THREE.Mesh; v: THREE.Vector3; g: number; life: number; max: number }
 interface Tracer { m: THREE.Mesh; life: number }
@@ -288,98 +314,272 @@ export class Game {
 
   /* ================= weapon ================= */
 
-  private gunMat(color: number, metal = true) {
-    return new THREE.MeshStandardMaterial({ color, roughness: metal ? 0.5 : 0.72, metalness: metal ? 0.6 : 0.15 })
+  /* ---------- процедурные текстуры оружия ---------- */
+
+  private texCanvas(size: number, draw: (g: CanvasRenderingContext2D, s: number) => void): THREE.CanvasTexture {
+    const cv = document.createElement('canvas')
+    cv.width = cv.height = size
+    const g = cv.getContext('2d')!
+    draw(g, size)
+    const t = new THREE.CanvasTexture(cv)
+    t.wrapS = t.wrapT = THREE.RepeatWrapping
+    t.colorSpace = THREE.SRGBColorSpace
+    t.anisotropy = 4
+    return t
   }
 
-  // процедурная сборка ствола из коробки/цилиндров по спецификации
+  private texMetal(base: string) {
+    return this.texCanvas(128, (g, s) => {
+      g.fillStyle = base
+      g.fillRect(0, 0, s, s)
+      for (let i = 0; i < 300; i++) {
+        g.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.10)'
+        g.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 2.2, 1)
+      }
+      g.globalAlpha = 0.09
+      g.strokeStyle = '#ffffff'
+      for (let i = 0; i < 24; i++) {
+        const y = Math.random() * s
+        g.beginPath(); g.moveTo(0, y); g.lineTo(s, y + (Math.random() - 0.5) * 5); g.stroke()
+      }
+      g.globalAlpha = 1
+    })
+  }
+
+  private texWood() {
+    return this.texCanvas(128, (g, s) => {
+      g.fillStyle = '#8a5a2c'
+      g.fillRect(0, 0, s, s)
+      for (let i = 0; i < 26; i++) {
+        g.strokeStyle = `rgba(58,32,10,${0.14 + Math.random() * 0.26})`
+        g.lineWidth = 1 + Math.random() * 2.2
+        const x = Math.random() * s
+        g.beginPath()
+        g.moveTo(x, 0)
+        g.bezierCurveTo(x + 9, s * 0.3, x - 9, s * 0.62, x + (Math.random() - 0.5) * 12, s)
+        g.stroke()
+      }
+      for (let i = 0; i < 220; i++) {
+        g.fillStyle = 'rgba(38,20,6,0.14)'
+        g.fillRect(Math.random() * s, Math.random() * s, 1.6, 1.6)
+      }
+      g.globalAlpha = 0.07
+      g.fillStyle = '#eec27f'
+      for (let i = 0; i < 6; i++) {
+        g.beginPath()
+        g.ellipse(Math.random() * s, Math.random() * s, 16 + Math.random() * 22, 5 + Math.random() * 4, 0, 0, 7)
+        g.fill()
+      }
+      g.globalAlpha = 1
+    })
+  }
+
+  private texPolymer(base: string) {
+    return this.texCanvas(128, (g, s) => {
+      g.fillStyle = base
+      g.fillRect(0, 0, s, s)
+      for (let i = 0; i < 460; i++) {
+        g.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.12)'
+        g.fillRect(Math.random() * s, Math.random() * s, 1.7, 1.7)
+      }
+      g.globalAlpha = 0.08
+      g.strokeStyle = '#000000'
+      for (let i = 0; i < 11; i++) {
+        const x = Math.random() * s
+        const y = Math.random() * s
+        g.beginPath(); g.moveTo(x, y)
+        g.lineTo(x + (Math.random() - 0.5) * 34, y + (Math.random() - 0.5) * 34)
+        g.stroke()
+      }
+      g.globalAlpha = 1
+    })
+  }
+
+  /* ---------- детальная сборка моделей оружия ---------- */
+
   private buildGunModel(spec: GunSpec): { group: THREE.Group; muzzle: THREE.Object3D } {
     const g = new THREE.Group()
     const muzzle = new THREE.Object3D()
-    const body = this.gunMat(spec.bodyColor)
-    const accent = this.gunMat(spec.accent, false)
-    const dark = this.gunMat(0x141519)
+    const css = (c: number) => `#${c.toString(16).padStart(6, '0')}`
 
-    const box = (w: number, h: number, l: number, m: THREE.Material, x: number, y: number, z: number, rx = 0) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), m)
+    // материалы с текстурами
+    const matMetal = new THREE.MeshStandardMaterial({ map: this.texMetal(css(spec.bodyMat === 'metal' ? spec.bodyColor : 0x2b2e33)), roughness: 0.46, metalness: 0.72 })
+    const matDark = new THREE.MeshStandardMaterial({ map: this.texMetal('#17191c'), roughness: 0.4, metalness: 0.8 })
+    const matWood = new THREE.MeshStandardMaterial({ map: this.texWood(), roughness: 0.66, metalness: 0.06 })
+    const matPoly = new THREE.MeshStandardMaterial({ map: this.texPolymer(css(spec.bodyColor)), roughness: 0.85, metalness: 0.1 })
+    const matBody = spec.bodyMat === 'wood' ? matWood : spec.bodyMat === 'poly' ? matPoly : matMetal
+    const matBlade = new THREE.MeshStandardMaterial({ color: 0xd9dee3, roughness: 0.22, metalness: 0.95 })
+
+    const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
       mesh.position.set(x, y, z)
-      mesh.rotation.x = rx
+      mesh.rotation.set(rx, ry, rz)
       g.add(mesh)
       return mesh
     }
-    const cyl = (r: number, l: number, m: THREE.Material, x: number, y: number, z: number, axis: 'x' | 'y' | 'z' = 'x') => {
-      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, l, 12), m)
-      if (axis === 'x') mesh.rotation.x = Math.PI / 2
-      if (axis === 'z') mesh.rotation.z = Math.PI / 2
+    const cyl = (r1: number, r2: number, len: number, m: THREE.Material, x: number, y: number, z: number, seg = 14) => {
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, seg), m)
+      mesh.rotation.x = Math.PI / 2
       mesh.position.set(x, y, z)
       g.add(mesh)
       return mesh
     }
 
-    const bh = spec.bodyH
-    const W = 0.062
+    const [bw, bh, bd] = spec.body
+    const barrelY = spec.barrelY ?? 0.015
 
-    // ---- нож (томагавк) ----
-    if (spec.kind === 'knife') {
-      const handle = cyl(0.013, spec.body, accent, 0, 0, 0.1, 'y')
-      handle.rotation.z = -0.4
-      box(0.018, 0.13, 0.15, this.gunMat(0x9aa0a8), 0, 0.15, -0.04)      // лезвие
-      box(0.016, 0.06, 0.05, dark, 0, 0.07, -0.04)                        // шейка
-      box(0.014, 0.04, 0.05, this.gunMat(0x9aa0a8), 0, 0.14, 0.04)         // обух-клык
-      muzzle.position.set(0, 0.12, -0.06)
+    /* ---- нож ---- */
+    if (spec.melee && spec.blade) {
+      const bl = spec.blade
+      box(0.03, 0.034, 0.13, matPoly, 0, 0.005, 0.075)                          // рукоять
+      box(0.032, 0.012, 0.03, matDark, 0, -0.014, 0.05)                          // подпальцевая выемка
+      box(0.032, 0.012, 0.03, matDark, 0, -0.014, 0.085)
+      box(0.034, 0.016, 0.018, matDark, 0, 0.005, 0.148)                         // тыльник
+      box(0.052, 0.014, 0.02, matMetal, 0, 0.012, 0.0)                           // гарда
+      box(bl.w, 0.008, bl.len, matBlade, 0, 0.02, -bl.len / 2 - 0.01)            // клинок
+      box(bl.w * 0.92, 0.003, bl.len, new THREE.MeshStandardMaterial({ color: 0xf4f7fa, roughness: 0.12, metalness: 1 }), 0, 0.0155, -bl.len / 2 - 0.01) // кромка
+      box(bl.w * 0.3, 0.004, bl.len * 0.9, matDark, 0, 0.026, -bl.len / 2 - 0.015) // обух
+      const tip = box(bl.w * 0.62, 0.007, bl.w * 0.62, matBlade, 0, 0.02, -bl.len - 0.01 - bl.w * 0.2, 0, Math.PI / 4)
+      tip.scale.z = 0.55
+      muzzle.position.set(0, 0.02, -bl.len - 0.05)
       g.add(muzzle)
       return { group: g, muzzle }
     }
 
-    // ---- Zeus (электрошокер) ----
-    if (spec.kind === 'zeus') {
-      box(W, bh, spec.body, body, 0, 0, spec.body / 2)
-      box(0.05, 0.13, 0.06, body, 0, -bh / 2 - 0.05, spec.body * 0.72, 0.25)
-      box(W * 0.9, bh * 0.55, 0.05, this.gunMat(spec.accent, false), 0, 0, -0.012)
-      cyl(0.006, 0.06, this.gunMat(spec.accent), -0.016, bh * 0.16, -0.05)
-      cyl(0.006, 0.06, this.gunMat(spec.accent), 0.016, bh * 0.16, -0.05)
-      muzzle.position.set(0, bh * 0.16, -0.08)
+    /* ---- пистолет ---- */
+    if (spec.pistol) {
+      const slideMat = new THREE.MeshStandardMaterial({ map: this.texMetal(css(spec.slideColor ?? 0xc9ced4)), roughness: 0.3, metalness: 0.85 })
+      box(bw, bh * 0.9, bd, matMetal, 0, -0.006, 0)                              // рамка
+      box(bw * 1.04, bh * 0.62, bd * 1.02, slideMat, 0, bh * 0.5, 0)             // затвор
+      if (spec.serrations) {                                                     // насечки затвора
+        for (let i = 0; i < 6; i++) {
+          box(0.002, bh * 0.5, 0.008, matDark, bw * 0.53, bh * 0.5, bd * 0.28 + i * 0.012)
+          box(0.002, bh * 0.5, 0.008, matDark, -bw * 0.53, bh * 0.5, bd * 0.28 + i * 0.012)
+        }
+      }
+      cyl(spec.barrelR * 0.9, spec.barrelR * 0.9, 0.06, matDark, 0, bh * 0.5, -bd / 2 - 0.02) // выступающий ствол
+      box(0.012, 0.03, 0.012, slideMat, 0, bh * 0.86, -bd * 0.4)                 // мушка
+      box(bw * 0.8, 0.02, 0.016, slideMat, 0, bh * 0.84, bd * 0.34)              // целик
+      box(bw * 0.9, 0.05, 0.05, matDark, 0, bh * 0.16, bd * 0.44)                // хвост затвора
+      box(bw * 0.94, bh * 1.5, 0.075, matMetal, 0, -bh * 1.05, bd * 0.26, -0.2)  // рукоять
+      box(bw * 0.8, 0.05, 0.02, matDark, 0, -bh * 1.62, bd * 0.2)                // пятка магазина
+      box(0.018, 0.04, 0.05, matDark, 0, -bh * 0.55, bd * 0.05)                  // спусковая скоба
+      box(0.008, 0.03, 0.014, matDark, 0, -bh * 0.36, 0.02)                      // спусковой крючок
+      box(bw * 0.5, 0.028, 0.014, matDark, 0, bh * 0.62, bd * 0.52, -0.5)        // молоток
+      muzzle.position.set(0, bh * 0.5, -bd / 2 - 0.055)
       g.add(muzzle)
       return { group: g, muzzle }
     }
 
-    // ---- общее огнестрельное ----
-    box(W, bh, spec.body, body, 0, 0, spec.body / 2)                       // ствольная коробка
+    /* ---- общее: винтовки / ПП ---- */
+    box(bw, bh, bd, matBody, 0, 0, 0)                                            // ствольная коробка
 
-    const barrelR = spec.kind === 'shotgun' ? 0.024 : spec.kind === 'sniper' ? 0.015 : spec.kind === 'pistol' ? 0.012 : 0.016
-    cyl(barrelR, spec.barrel, dark, 0, bh * 0.12, -spec.barrel / 2)        // ствол
+    // зубья планки пикатини сверху
+    const teeth = Math.floor(bd / 0.045)
+    for (let i = 0; i < teeth; i++) box(bw * 0.5, 0.011, 0.016, matDark, 0, bh / 2 + 0.005, -bd / 2 + 0.03 + i * 0.045)
 
-    if (spec.kind === 'shotgun') {                                          // подствольный магазин + цевьё-помпа
-      cyl(0.019, spec.barrel * 0.8, body, 0, -bh * 0.2, -spec.barrel * 0.4)
-      box(W * 0.95, 0.055, 0.11, accent, 0, -bh * 0.2, -spec.barrel * 0.66)
+    // ствол + дульное устройство
+    let zEnd = -bd / 2
+    if (spec.barrelLen > 0) {
+      cyl(spec.barrelR, spec.barrelR, spec.barrelLen, matDark, 0, barrelY, zEnd - spec.barrelLen / 2)
+      zEnd -= spec.barrelLen
+    }
+    if (spec.muzzle) {
+      cyl(spec.muzzle.r, spec.muzzle.r, spec.muzzle.len, matMetal, 0, barrelY, zEnd - spec.muzzle.len / 2)
+      cyl(spec.muzzle.r * 0.55, spec.muzzle.r * 0.55, spec.muzzle.len * 0.5, matDark, 0, barrelY, zEnd - spec.muzzle.len * 0.55) // внутренний канал
+      zEnd -= spec.muzzle.len
     }
 
-    if (spec.kind !== 'pistol') {                                           // цевьё, планка, мушка
-      box(W * 0.95, bh * 0.82, spec.barrel * 0.45, accent, 0, bh * 0.05, -spec.barrel * 0.24)
-      box(0.03, 0.026, spec.barrel * 0.5, dark, 0, bh * 0.5 + 0.012, -spec.barrel * 0.3)
-      box(0.012, 0.045, 0.012, dark, 0, bh * 0.5 + 0.032, -spec.barrel * 0.85)
+    // газовая трубка + прицельные (АК)
+    if (spec.gasTube) {
+      cyl(0.011, 0.011, (spec.handguard?.[2] ?? 0.2) * 0.95, matMetal, 0, barrelY + bh * 0.42, -bd / 2 - (spec.handguard?.[2] ?? 0.2) * 0.47)
+      box(bw * 0.7, bh * 0.5, 0.03, matMetal, 0, barrelY + bh * 0.28, -bd / 2 - (spec.handguard?.[2] ?? 0.2) - 0.015) // колодка мушки
+      box(0.008, 0.05, 0.008, matDark, 0, barrelY + bh * 0.62, -bd / 2 - (spec.handguard?.[2] ?? 0.2) - 0.015)
+      box(0.044, 0.02, 0.014, matDark, 0, bh / 2 + 0.02, bd * 0.3)               // целик
+      box(0.012, 0.03, 0.05, matDark, bw * 0.42, 0.02, bd * 0.05)                // рукоятка взведения
     }
 
-    if (spec.stock > 0) box(W * 0.85, bh * 0.95, spec.stock, accent, 0, 0, spec.body + spec.stock / 2)  // приклад
-
-    box(0.05, 0.11, 0.055, body, 0, -bh / 2 - 0.05, spec.body * 0.72, 0.25) // рукоять
-
-    if (spec.drum) cyl(0.055, 0.075, dark, 0, -bh / 2 - 0.02, spec.body * 0.35, 'z')  // дисковый магазин
-    else if (spec.mag > 0) box(0.05, spec.mag, 0.07, dark, 0, -bh / 2 - spec.mag / 2 + 0.01, spec.body * 0.35, -0.16)
-
-    if (spec.scope) {                                                        // оптика
-      cyl(0.03, 0.22, dark, 0, bh / 2 + 0.055, spec.body * 0.3)
-      cyl(0.036, 0.05, body, 0, bh / 2 + 0.055, spec.body * 0.3 + 0.12)
-      box(0.012, 0.05, 0.012, dark, 0, bh / 2 + 0.02, spec.body * 0.3)
-    } else if (spec.kind === 'pistol') {
-      box(0.012, 0.028, 0.012, dark, 0, bh * 0.5 + 0.02, -spec.barrel * 0.7)
-      box(0.04, 0.02, 0.014, dark, 0, bh * 0.5 + 0.015, spec.body * 0.8)
-    } else {
-      box(0.045, 0.024, 0.018, dark, 0, bh / 2 + 0.02, spec.body * 0.6)      // целик
+    // цевьё с вентиляционными окнами
+    if (spec.handguard) {
+      const [hw, hh, hd] = spec.handguard
+      const hm = spec.handguardMat === 'wood' ? matWood : matPoly
+      box(hw, hh, hd, hm, 0, barrelY - hh * 0.12, -bd / 2 - hd / 2 + 0.012)
+      box(hw * 0.86, hh * 0.4, hd * 0.96, matDark, 0, barrelY + hh * 0.42, -bd / 2 - hd / 2 + 0.012) // верхняя накладка
+      for (let i = 0; i < 3; i++) {
+        box(0.004, hh * 0.5, 0.045, matDark, hw * 0.505, barrelY - hh * 0.12, -bd / 2 - 0.05 - i * 0.07)
+        box(0.004, hh * 0.5, 0.045, matDark, -hw * 0.505, barrelY - hh * 0.12, -bd / 2 - 0.05 - i * 0.07)
+      }
     }
 
-    const tipY = spec.kind === 'pistol' ? 0 : bh * 0.12
-    muzzle.position.set(0, tipY, -spec.barrel - (spec.kind === 'sniper' ? 0.07 : 0.02))
+    // магазин
+    if (spec.mag) {
+      const m = spec.mag
+      box(m.w, m.h, m.d, matDark, m.x ?? 0, -bh / 2 - m.h / 2 + 0.025, (m.z ?? 0) + 0.02, m.tilt)
+      box(m.w * 0.9, 0.02, m.d * 0.9, matMetal, m.x ?? 0, -bh / 2 - m.h + 0.03, (m.z ?? 0) + 0.02 + Math.sin(m.tilt) * m.h * 0.45, m.tilt)
+    }
+
+    // верхний магазин P90 (полупрозрачный)
+    if (spec.topMag) {
+      const tm = new THREE.MeshStandardMaterial({ color: 0x9aa862, roughness: 0.4, metalness: 0.1, transparent: true, opacity: 0.55 })
+      box(bw * 0.92, 0.024, bd * 0.86, tm, 0, bh / 2 + 0.012, -0.01)
+      for (let i = 0; i < 8; i++) box(0.008, 0.02, 0.014, new THREE.MeshStandardMaterial({ color: 0xd8b45a, metalness: 0.8, roughness: 0.35 }), 0, bh / 2 + 0.012, -bd * 0.3 + i * 0.045)
+    }
+
+    // буллпап: задняя часть и упор
+    if (spec.bullpup) {
+      box(bw * 0.9, bh * 1.12, 0.09, matBody, 0, -0.004, bd / 2 + 0.035)
+      box(bw * 0.94, bh * 0.9, 0.02, matDark, 0, -0.004, bd / 2 + 0.085)         // затыльник
+      box(bw * 0.8, 0.03, 0.1, matDark, 0, bh / 2 + 0.012, bd * 0.28)            // щека
+      box(bw * 0.7, 0.05, 0.12, matBody, 0, -bh / 2 - 0.02, -bd * 0.3, -0.55)    // наклонная передняя кромка
+      box(0.016, 0.05, 0.05, matDark, bw * 0.4, 0.01, -bd * 0.34)                // боковая планка
+      box(0.016, 0.05, 0.05, matDark, -bw * 0.4, 0.01, -bd * 0.34)
+    }
+
+    // приклад
+    if (spec.stock) {
+      const st = spec.stock
+      const sm = st.mat === 'wood' ? matWood : new THREE.MeshStandardMaterial({ map: this.texPolymer(css(st.color)), roughness: 0.8, metalness: 0.12 })
+      box(bw * 0.88, bh * 1.05, st.l * 0.5, sm, 0, -st.drop * 0.35, bd / 2 + st.l * 0.25)
+      box(bw * 0.92, bh * 1.4, st.l * 0.5, sm, 0, -st.drop, bd / 2 + st.l * 0.75)
+      box(bw * 0.96, bh * 1.45, 0.018, matDark, 0, -st.drop, bd / 2 + st.l + 0.002) // затыльник
+    }
+
+    // рукоять + спусковая скоба
+    if (spec.grip) {
+      box(bw * 0.85, 0.115, 0.06, matBody, 0, -bh / 2 - 0.055, bd * 0.3, -0.22)
+      box(bw * 0.7, 0.03, 0.02, matDark, 0, -bh / 2 - 0.1, bd * 0.16)
+    }
+
+    // оптика с линзой
+    if (spec.scope) {
+      const sc = spec.scope
+      const y = bh / 2 + sc.r + 0.024
+      cyl(sc.r, sc.r, sc.len, matDark, 0, y, -0.02)
+      cyl(sc.r * 1.45, sc.r, 0.055, matDark, 0, y, -0.02 - sc.len / 2)          // объектив
+      cyl(sc.r * 1.2, sc.r, 0.05, matDark, 0, y, -0.02 + sc.len / 2)            // окуляр
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(sc.r * 1.3, 20), new THREE.MeshBasicMaterial({ color: 0x9fd4ff }))
+      lens.position.set(0, y, -0.02 + sc.len / 2 + 0.027)
+      lens.rotation.y = Math.PI
+      g.add(lens)
+      box(0.014, 0.05, 0.03, matDark, 0, bh / 2 + 0.01, -0.06)                   // кронштейн 1
+      box(0.014, 0.05, 0.03, matDark, 0, bh / 2 + 0.01, 0.04)                    // кронштейн 2
+      box(0.004, 0.02, 0.004, matDark, 0, y + sc.r + 0.012, -0.1)                // маховик поправок
+    }
+
+    // сошки
+    if (spec.bipod) {
+      box(0.012, 0.2, 0.012, matDark, 0.02, -bh / 2 - 0.08, -bd * 0.36, 0.45, 0, 0.28)
+      box(0.012, 0.2, 0.012, matDark, -0.02, -bh / 2 - 0.08, -bd * 0.36, 0.45, 0, -0.28)
+      box(0.05, 0.02, 0.05, matDark, 0, -bh / 2 - 0.012, -bd * 0.36)
+    }
+
+    // рукоять затвора
+    if (spec.boltHandle) {
+      box(0.012, 0.012, 0.07, matMetal, bw * 0.55, -0.005, bd * 0.1, 0, 0, 0.7)
+      cyl(0.011, 0.011, 0.024, matMetal, bw * 0.58, -0.035, bd * 0.07)
+    }
+
+    muzzle.position.set(0, barrelY, zEnd - 0.02)
     g.add(muzzle)
     return { group: g, muzzle }
   }
@@ -719,13 +919,10 @@ export class Game {
     if (cfg.sound === 'sniper') this.sfx.sniper()
     else if (cfg.sound === 'pistol') this.sfx.pistol()
     else if (cfg.sound === 'smg') this.sfx.smg()
-    else if (cfg.sound === 'shotgun') this.sfx.shotgun()
-    else if (cfg.sound === 'lmg') this.sfx.lmg()
-    else if (cfg.sound === 'zeus') this.sfx.zeus()
     else this.sfx.shoot()
 
     // fx
-    const big = cfg.sound === 'sniper' || cfg.sound === 'shotgun'
+    const big = cfg.sound === 'sniper'
     this.flashT = big ? 0.07 : 0.04
     this.flash.rotation.z = Math.random() * Math.PI
     const fs = (big ? 1.2 : cfg.sound === 'pistol' ? 0.55 : 0.75) + Math.random() * 0.5
@@ -761,7 +958,7 @@ export class Game {
     const muzzlePos = new THREE.Vector3()
     this.weaponMuzzles[this.equipped].getWorldPosition(muzzlePos)
     const end = hits.length ? hits[0].point : this.tmpV.clone().addScaledVector(this.tmpD, 120)
-    this.spawnTracer(muzzlePos, end, cfg.sound === 'zeus' ? 0x7ad7ff : 0xffd27a)
+    this.spawnTracer(muzzlePos, end, cfg.sound === 'sniper' ? 0xffe9a0 : 0xffd27a)
     this.burst(muzzlePos, 0x9c9a90, 2, 0.6, 0.6, -2.2) // пороховой дым
 
     if (hits.length) {

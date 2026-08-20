@@ -423,7 +423,7 @@ export default function App() {
                 <span ref={resRef} className={`font-display text-lg leading-none text-[#8b98a7] ${melee ? 'hidden' : ''}`}>/ 90</span>
               </div>
               <div className="mt-1 text-[10px] font-bold tracking-[0.3em] text-[#8b98a7]">
-                <span ref={weaponRef}>13·DEAGLE</span>
+                <span ref={weaponRef}>3·DEAGLE</span>
                 <span className="ml-2 text-[#5f6d7d]">TAB — АРСЕНАЛ</span>
               </div>
             </div>
@@ -436,7 +436,7 @@ export default function App() {
           {/* controls hint */}
           {hint && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 border border-[#2b3844] bg-[#12181f]/85 px-4 py-1.5 text-[11px] font-semibold tracking-wider text-[#8b98a7]">
-              WASD — движение · ЛКМ — огонь · TAB — арсенал (19 стволов) · 1–9 / колесо — смена · R — перезарядка · G — граната
+              WASD — движение · ЛКМ — огонь · TAB — арсенал · 1–5 / колесо — смена · ПКМ — оптика · R — перезарядка · G — граната
             </div>
           )}
           {/* look-around hint */}
@@ -500,9 +500,9 @@ export default function App() {
                   <span><span className="key">G</span></span><span>граната</span>
                   <span><span className="key">SHIFT</span></span><span>тихий шаг — точность выше</span>
                   <span><span className="key">SPACE</span></span><span>прыжок</span>
-                  <span><span className="key">TAB</span></span><span>арсенал: 19 стволов — винтовки, ПП, снайперки, дробовик, нож</span>
+                  <span><span className="key">TAB</span></span><span>арсенал: AK-47, AWP, Deagle, P90 и нож</span>
                   <span><span className="key">1</span>–<span className="key">9</span> / колесо</span><span>быстрая смена оружия</span>
-                  <span><span className="key">ПКМ</span></span><span>оптика AWP / SSG 08 / AUG</span>
+                  <span><span className="key">ПКМ</span></span><span>оптика AWP ×4</span>
                   <span><span className="key">ESC</span></span><span>пауза</span>
                 </div>
               </div>
@@ -510,8 +510,8 @@ export default function App() {
                 <div className="border-b border-[#2b3844] bg-[#182029] px-4 py-2 text-[11px] font-bold tracking-[0.3em] text-[#f2a33c]">БРИФИНГ</div>
                 <ul className="space-y-1.5 px-4 py-3 text-[12px] leading-relaxed text-[#aab6c4]">
                   <li>Карта — <span className="font-bold text-[#f2a33c]">Dust II</span>: лонг A, мид с дверями, туннели на B.</li>
-                  <li>Арсенал — <span className="key">TAB</span>: AK, M4, AUG, FAMAS, AWP, SSG, ПП, дробовик, Negev, пистолеты, Zeus и нож.</li>
-                  <li><span className="font-bold text-[#eae6dc]">Хедшот</span> — урон ×4. Снайперки убивают с тела, <span className="key">ПКМ</span> — оптика.</li>
+                  <li>Арсенал — <span className="key">TAB</span>: AK-47, AWP, Deagle, P90 и нож. Колесо мыши листает стволы.</li>
+                  <li><span className="font-bold text-[#eae6dc]">Хедшот</span> — урон ×4. AWP убивает с тела, <span className="key">ПКМ</span> — оптика ×4.</li>
                   <li>Матч до <span className="font-bold text-[#f2a33c]">3 побед</span>, раунд — 1:40. Боты злеют с каждым раундом.</li>
                 </ul>
               </div>
