@@ -1,4 +1,8 @@
 import * as THREE from 'three'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { buildMap, collideMove, type MapData } from './map'
 import { Bot, type BotHooks } from './bots'
 import { SFX } from './audio'
@@ -6,13 +10,12 @@ import { SFX } from './audio'
 export interface HudData {
   hp: number; armor: number; mag: number; res: number; nades: number
   timer: number; spreadPx: number; enemies: number; reloading: boolean
-  money: number; weapon: string
+  weapon: string
 }
 export interface FeedEntry { id: number; killer: string; victim: string; head: boolean; byPlayer: boolean }
 export interface BannerData { title: string; sub?: string; tone: 'win' | 'lose' | 'info' }
 export interface OverData { result: 'victory' | 'defeat'; kills: number; deaths: number; won: number; lost: number }
 export interface RadarData { px: number; pz: number; yaw: number; dots: { x: number; z: number }[] }
-export interface ShopState { open: boolean; money: number; ak: boolean; awp: boolean; armor: boolean; nades: number }
 
 export interface GameHooks {
   hud(h: HudData): void
@@ -25,7 +28,6 @@ export interface GameHooks {
   radar(d: RadarData): void
   over(o: OverData): void
   lockedChange(locked: boolean): void
-  shop(s: ShopState): void
   scoped(s: boolean): void
 }
 
@@ -90,16 +92,12 @@ export class Game {
   private cooldown = 0
   private firing = false
 
-  // weapons & economy
-  private money = 800
-  private owned: Record<'ak' | 'awp', boolean> = { ak: false, awp: false }
-  private primary: 'ak' | 'awp' | null = null
+  // weapons
   private equipped: WeaponId = 'deagle'
   private ammo: Record<WeaponId, { mag: number; res: number }> = {
     ak: { mag: 30, res: 90 }, awp: { mag: 5, res: 30 }, deagle: { mag: 7, res: 35 },
   }
   private scoped = false
-  private buyOpen = false
   private switchAnim = 1
   private lastCX = 0
   private lastCY = 0
@@ -120,6 +118,9 @@ export class Game {
   private nadesFly: Nade[] = []
   private particles: Particle[] = []
   private tracers: Tracer[] = []
+  private shells: { m: THREE.Mesh; v: THREE.Vector3; rv: THREE.Vector3; life: number }[] = []
+  private decals: { m: THREE.Mesh; life: number }[] = []
+  private composer: EffectComposer
 
   // fx objects
   private weapon = new THREE.Group()
@@ -146,6 +147,8 @@ export class Game {
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
     container.appendChild(this.renderer.domElement)
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+    this.renderer.toneMappingExposure = 1.06
 
     this.scene.background = new THREE.Color(0x93a9bc)
     this.scene.fog = new THREE.Fog(0xaeb9bd, 34, 95)
@@ -192,6 +195,30 @@ export class Game {
       this.scene.add(m)
       this.tracers.push({ m, life: 0 })
     }
+
+    // гильзы
+    const shellGeo = new THREE.BoxGeometry(0.016, 0.05, 0.016)
+    const shellMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.85, roughness: 0.35 })
+    for (let i = 0; i < 22; i++) {
+      const m = new THREE.Mesh(shellGeo, shellMat)
+      m.visible = false
+      this.scene.add(m)
+      this.shells.push({ m, v: new THREE.Vector3(), rv: new THREE.Vector3(), life: 0 })
+    }
+    // декали попаданий
+    const decalGeo = new THREE.PlaneGeometry(0.1, 0.1)
+    for (let i = 0; i < 40; i++) {
+      const m = new THREE.Mesh(decalGeo, new THREE.MeshBasicMaterial({ color: 0x14100a, transparent: true, opacity: 0, depthWrite: false }))
+      m.visible = false
+      this.scene.add(m)
+      this.decals.push({ m, life: 0 })
+    }
+
+    // постобработка: bloom + тонмаппинг
+    this.composer = new EffectComposer(this.renderer)
+    this.composer.addPass(new RenderPass(this.scene, this.camera))
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.5, 0.5, 0.82))
+    this.composer.addPass(new OutputPass())
 
     this.pos.set(this.map.playerSpawn.x, 0, this.map.playerSpawn.z)
     this.bindEvents()
@@ -309,23 +336,21 @@ export class Game {
     if (e.code === 'Space') e.preventDefault()
     this.keys[e.code] = true
     if (this.state !== 'playing') return
-    // магазин: цифры — покупка, B/ESC — закрыть
-    if (this.buyOpen) {
-      if (e.code === 'Digit1') this.buy('ak')
-      else if (e.code === 'Digit2') this.buy('awp')
-      else if (e.code === 'Digit3') this.buy('armor')
-      else if (e.code === 'Digit4') this.buy('nade')
-      else if (e.code === 'KeyB' || (e.code === 'Escape' && !this.locked)) this.toggleShop()
-      return
-    }
     if (e.code === 'Escape' && !this.locked) { this.pause(); return }
-    if (e.code === 'KeyB') this.toggleShop()
     if (e.code === 'KeyR') this.startReload()
     if (e.code === 'KeyG') this.throwNade()
-    if (e.code === 'Digit1' && this.primary) this.switchTo(this.primary)
+    if (e.code === 'Digit1') this.switchTo('ak')
     if (e.code === 'Digit2') this.switchTo('deagle')
+    if (e.code === 'Digit3') this.switchTo('awp')
   }
   private onKeyUp = (e: KeyboardEvent) => { this.keys[e.code] = false }
+  private onWheel = (e: WheelEvent) => {
+    if (this.state !== 'playing') return
+    const order: WeaponId[] = ['ak', 'deagle', 'awp']
+    const i = order.indexOf(this.equipped)
+    const n = order.length
+    this.switchTo(order[(i + (e.deltaY > 0 ? 1 : n - 1)) % n])
+  }
 
   private onMouseMove = (e: MouseEvent) => {
     if (this.state !== 'playing') return
@@ -385,6 +410,7 @@ export class Game {
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(w, h)
+    this.composer.setSize(w, h)
   }
   private onVisibility = () => {
     if (document.hidden && this.state === 'playing') this.pause()
@@ -394,6 +420,7 @@ export class Game {
   private bindEvents() {
     window.addEventListener('keydown', this.onKeyDown)
     window.addEventListener('keyup', this.onKeyUp)
+    window.addEventListener('wheel', this.onWheel, { passive: true })
     window.addEventListener('resize', this.onResize)
     document.addEventListener('mousemove', this.onMouseMove)
     document.addEventListener('mousedown', this.onMouseDown)
@@ -419,15 +446,7 @@ export class Game {
     this.round = 0
     this.kills = 0
     this.deaths = 0
-    // стартовая экономика: только Deagle
-    this.money = 800
-    this.owned = { ak: false, awp: false }
-    this.primary = null
     this.equipped = 'deagle'
-    this.armor = 0
-    this.nades = 1
-    this.buyOpen = false
-    this.emitShop()
     this.applyWeaponVisibility()
     this.hooks.score(0, 0)
     this.hooks.kills(0)
@@ -445,7 +464,6 @@ export class Game {
     this.state = 'paused'
     this.firing = false
     this.mouseInit = false
-    if (this.buyOpen) { this.buyOpen = false; this.emitShop() }
     if (this.scoped) this.toggleScope(false)
     if (document.pointerLockElement) document.exitPointerLock()
     else this.hooks.lockedChange(false)
@@ -455,7 +473,6 @@ export class Game {
     window.clearTimeout(this.roundTimeout)
     this.clearEntities()
     this.state = 'attract'
-    if (this.buyOpen) { this.buyOpen = false; this.emitShop() }
     if (this.scoped) this.toggleScope(false)
     if (document.pointerLockElement) document.exitPointerLock()
   }
@@ -464,6 +481,7 @@ export class Game {
     cancelAnimationFrame(this.raf)
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
+    window.removeEventListener('wheel', this.onWheel)
     window.removeEventListener('resize', this.onResize)
     document.removeEventListener('mousemove', this.onMouseMove)
     document.removeEventListener('mousedown', this.onMouseDown)
@@ -499,10 +517,12 @@ export class Game {
     this.shake = 0
     this.kick = 0
     this.hp = 100
-    // броня, деньги и закупленное оружие сохраняются между раундами
+    this.armor = 100
+    // каждый раунд — полный боезапас всех стволов
     for (const id of ['ak', 'awp', 'deagle'] as WeaponId[]) {
       this.ammo[id] = { mag: WEAPONS[id].mag, res: WEAPONS[id].res }
     }
+    this.nades = Math.min(3, this.round)
     this.reloading = false
     this.firing = false
     this.scoped = false
@@ -534,7 +554,7 @@ export class Game {
     const need = WINS_NEEDED - this.scoreA
     this.hooks.banner({
       title: `РАУНД ${this.round}`,
-      sub: `противников: ${count} · магазин: [B]`,
+      sub: `противников: ${count} · стволы: [1][2][3] / колесо`,
       tone: 'info',
     })
     this.sfx.beep(760, 0.12, 0.22)
@@ -550,9 +570,6 @@ export class Game {
     this.camera.updateProjectionMatrix()
     if (won) this.scoreA++
     else this.scoreB++
-    const reward = won ? 3250 : 1400
-    this.money = Math.min(16000, this.money + reward)
-    this.hooks.feed({ killer: 'МАГАЗИН', victim: won ? `+$${reward} за победу` : `+$${reward} за раунд`, head: false, byPlayer: won })
     this.hooks.score(this.scoreA, this.scoreB)
     if (document.pointerLockElement) document.exitPointerLock()
     const done = this.scoreA >= WINS_NEEDED || this.scoreB >= WINS_NEEDED
@@ -627,6 +644,7 @@ export class Game {
     this.recoilPitch += cfg.recoil + Math.random() * cfg.recoil * 0.5
     this.recoilYaw += (Math.random() - 0.5) * cfg.recoilYaw * 2
     this.spread = Math.min(1, this.spread + (this.onGround ? cfg.kick : cfg.kick * 1.6))
+    this.spawnShell()
 
     // hitscan
     this.camera.getWorldDirection(this.tmpD)
@@ -653,6 +671,7 @@ export class Game {
     this.weaponMuzzles[this.equipped].getWorldPosition(muzzlePos)
     const end = hits.length ? hits[0].point : this.tmpV.clone().addScaledVector(this.tmpD, 120)
     this.spawnTracer(muzzlePos, end, 0xffd27a)
+    this.burst(muzzlePos, 0x9c9a90, 2, 0.6, 0.6, -2.2) // пороховой дым
 
     if (hits.length) {
       const ud = hits[0].object.userData as { bot?: Bot; part?: string }
@@ -669,14 +688,16 @@ export class Game {
       } else {
         this.burst(hits[0].point, 0xd8c08a, 7, 2.6, 0.35)
         this.burst(hits[0].point, 0xfff0b8, 4, 3.4, 0.25)
+        if (hits[0].face) {
+          const nrm = new THREE.Vector3().copy(hits[0].face.normal).transformDirection(hits[0].object.matrixWorld)
+          this.addDecal(hits[0].point, nrm)
+        }
       }
     }
   }
 
   private onBotKilled(bot: Bot, head: boolean) {
     this.kills++
-    const reward = WEAPONS[this.equipped].reward + (head ? 50 : 0)
-    this.money = Math.min(16000, this.money + reward)
     this.hooks.kills(this.kills)
     this.hooks.hitmark('kill')
     this.hooks.feed({ killer: 'ВЫ', victim: bot.name, head, byPlayer: true })
@@ -723,7 +744,6 @@ export class Game {
 
   private switchTo(w: WeaponId) {
     if (this.equipped === w || this.state !== 'playing') return
-    if (w !== 'deagle' && !this.owned[w as 'ak' | 'awp']) { this.sfx.deny(); return }
     this.equipped = w
     this.reloading = false
     this.firing = false
@@ -750,52 +770,30 @@ export class Game {
     this.hooks.scoped(next)
   }
 
-  private emitShop() {
-    this.hooks.shop({
-      open: this.buyOpen,
-      money: this.money,
-      ak: this.owned.ak,
-      awp: this.owned.awp,
-      armor: this.armor >= 100,
-      nades: this.nades,
-    })
+  private spawnShell() {
+    const s = this.shells.find((q) => q.life <= 0)
+    if (!s) return
+    s.m.visible = true
+    this.camera.getWorldPosition(this.tmpV)
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion)
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion)
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion)
+    s.m.position.copy(this.tmpV).addScaledVector(right, 0.22).addScaledVector(up, -0.1).addScaledVector(fwd, 0.2)
+    s.v.copy(right).multiplyScalar(1.6 + Math.random() * 1.2).addScaledVector(up, 1.6 + Math.random() * 1.4).addScaledVector(fwd, 0.5)
+    s.rv.set((Math.random() - 0.5) * 25, (Math.random() - 0.5) * 25, (Math.random() - 0.5) * 25)
+    s.life = 1.1
   }
 
-  private toggleShop() {
-    if (this.state !== 'playing') return
-    this.buyOpen = !this.buyOpen
-    this.emitShop()
-    this.sfx.beep(this.buyOpen ? 940 : 620, 0.05, 0.14)
-  }
-
-  buy(id: 'ak' | 'awp' | 'armor' | 'nade') {
-    if (!this.buyOpen || this.state !== 'playing') return
-    const prices: Record<string, number> = { ak: 2700, awp: 4750, armor: 650, nade: 300 }
-    const names: Record<string, string> = { ak: 'AK-47', awp: 'AWP', armor: 'Бронежилет', nade: 'Граната' }
-    const price = prices[id]
-    if (id === 'ak' && this.owned.ak) { this.sfx.deny(); return }
-    if (id === 'awp' && this.owned.awp) { this.sfx.deny(); return }
-    if (id === 'armor' && this.armor >= 100) { this.sfx.deny(); return }
-    if (id === 'nade' && this.nades >= 2) { this.sfx.deny(); return }
-    if (this.money < price) {
-      this.sfx.deny()
-      this.hooks.feed({ killer: 'МАГАЗИН', victim: 'недостаточно денег', head: false, byPlayer: false })
-      return
-    }
-    this.money -= price
-    if (id === 'ak' || id === 'awp') {
-      this.owned[id] = true
-      this.primary = id
-      this.ammo[id] = { mag: WEAPONS[id].mag, res: WEAPONS[id].res }
-      this.switchTo(id)
-    } else if (id === 'armor') {
-      this.armor = 100
-    } else {
-      this.nades = Math.min(2, this.nades + 1)
-    }
-    this.sfx.buy()
-    this.hooks.feed({ killer: 'МАГАЗИН', victim: `куплен ${names[id]}`, head: false, byPlayer: true })
-    this.emitShop()
+  private addDecal(point: THREE.Vector3, normal: THREE.Vector3) {
+    const d = this.decals.find((q) => q.life <= 0)
+    if (!d) return
+    d.m.position.copy(point).addScaledVector(normal, 0.015)
+    d.m.lookAt(this.tmpV.copy(point).add(normal))
+    d.m.rotation.z = Math.random() * Math.PI
+    const sc = 0.7 + Math.random() * 0.9
+    d.m.scale.set(sc, sc, sc)
+    d.m.visible = true
+    d.life = 7
   }
 
   /* ================= grenade ================= */
@@ -931,6 +929,31 @@ export class Game {
       if (p.m.position.y < 0.02) { p.m.position.y = 0.02; p.v.y = Math.abs(p.v.y) * 0.3; p.v.x *= 0.7; p.v.z *= 0.7 }
       ;(p.m.material as THREE.MeshBasicMaterial).opacity = Math.min(1, p.life / p.max * 1.4)
     }
+    // гильзы
+    for (const s of this.shells) {
+      if (s.life <= 0) continue
+      s.life -= dt
+      if (s.life <= 0) { s.m.visible = false; continue }
+      s.v.y -= 13 * dt
+      s.m.position.addScaledVector(s.v, dt)
+      if (s.m.position.y < 0.02) {
+        s.m.position.y = 0.02
+        s.v.y = Math.abs(s.v.y) * 0.35
+        s.v.x *= 0.6
+        s.v.z *= 0.6
+        s.rv.multiplyScalar(0.5)
+      }
+      s.m.rotation.x += s.rv.x * dt
+      s.m.rotation.y += s.rv.y * dt
+      s.m.rotation.z += s.rv.z * dt
+    }
+    // декали попаданий
+    for (const d of this.decals) {
+      if (d.life <= 0) continue
+      d.life -= dt
+      if (d.life <= 0) { d.m.visible = false; continue }
+      ;(d.m.material as THREE.MeshBasicMaterial).opacity = Math.min(0.7, d.life * 0.5)
+    }
     // tracers
     for (const t of this.tracers) {
       if (t.life <= 0) continue
@@ -973,6 +996,8 @@ export class Game {
 
     const dust = this.scene.getObjectByName('dust')
     if (dust) dust.rotation.y += dt * 0.012
+    const clouds = this.scene.getObjectByName('clouds')
+    if (clouds) clouds.rotation.y += dt * 0.007
 
     if (this.state === 'attract') {
       this.attractT += dt * 0.09
@@ -996,7 +1021,7 @@ export class Game {
       el.style.cursor = wantCursor
     }
 
-    this.renderer.render(this.scene, this.camera)
+    this.composer.render()
   }
 
   private updateDying(dt: number) {
@@ -1147,8 +1172,7 @@ export class Game {
       spreadPx: Math.round(this.scoped ? 2 : 5 + this.spread * 30 + (moving ? 4 : 0)),
       enemies: alive,
       reloading: this.reloading,
-      money: this.money,
-      weapon: `${this.equipped === 'deagle' ? '2' : '1'}·${WEAPONS[this.equipped].name}`,
+      weapon: `${this.equipped === 'ak' ? '1' : this.equipped === 'deagle' ? '2' : '3'}·${WEAPONS[this.equipped].name}`,
     })
     this.hooks.radar({
       px: this.pos.x,

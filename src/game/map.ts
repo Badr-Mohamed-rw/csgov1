@@ -284,6 +284,104 @@ export function buildMap(scene: THREE.Scene): MapData {
   dust.name = 'dust'
   scene.add(dust)
 
+  // ---------- небо, облака, пальмы, знаки сайтов ----------
+  const skyCv = document.createElement('canvas')
+  skyCv.width = 16
+  skyCv.height = 256
+  const sg = skyCv.getContext('2d')!
+  const grad = sg.createLinearGradient(0, 0, 0, 256)
+  grad.addColorStop(0, '#4e8cc4')
+  grad.addColorStop(0.45, '#9cc3dd')
+  grad.addColorStop(0.75, '#d8e3e4')
+  grad.addColorStop(1, '#e6d9b8')
+  sg.fillStyle = grad
+  sg.fillRect(0, 0, 16, 256)
+  const skyTex = new THREE.CanvasTexture(skyCv)
+  skyTex.colorSpace = THREE.SRGBColorSpace
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(150, 24, 12),
+    new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false })
+  )
+  scene.add(sky)
+
+  const cloudCv = document.createElement('canvas')
+  cloudCv.width = cloudCv.height = 128
+  const cg = cloudCv.getContext('2d')!
+  const rg = cg.createRadialGradient(64, 64, 8, 64, 64, 62)
+  rg.addColorStop(0, 'rgba(255,255,255,0.95)')
+  rg.addColorStop(0.6, 'rgba(255,255,255,0.45)')
+  rg.addColorStop(1, 'rgba(255,255,255,0)')
+  cg.fillStyle = rg
+  cg.fillRect(0, 0, 128, 128)
+  const cloudTex = new THREE.CanvasTexture(cloudCv)
+  const clouds = new THREE.Group()
+  clouds.name = 'clouds'
+  for (let i = 0; i < 6; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent: true, opacity: 0.7, fog: false, depthWrite: false }))
+    const a = (i / 6) * Math.PI * 2 + Math.random()
+    sp.position.set(Math.cos(a) * (70 + Math.random() * 40), 34 + Math.random() * 18, Math.sin(a) * (70 + Math.random() * 40))
+    const s = 26 + Math.random() * 22
+    sp.scale.set(s, s * 0.45, 1)
+    clouds.add(sp)
+  }
+  scene.add(clouds)
+
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8a6844, roughness: 1 })
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x5f7d3a, roughness: 0.9, side: THREE.DoubleSide })
+  const palm = (x: number, z: number, h: number) => {
+    const g = new THREE.Group()
+    g.position.set(x, 0, z)
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.27, h, 7), trunkMat)
+    t.position.y = h / 2
+    t.rotation.z = (Math.random() - 0.5) * 0.14
+    t.castShadow = true
+    g.add(t)
+    for (let i = 0; i < 6; i++) {
+      const pivot = new THREE.Object3D()
+      pivot.position.y = h
+      pivot.rotation.y = (i / 6) * Math.PI * 2 + Math.random() * 0.4
+      const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.45, 2.6, 5), leafMat)
+      leaf.scale.set(0.38, 1, 1)
+      leaf.position.set(1.15, 0.2, 0)
+      leaf.rotation.z = -1.75 - Math.random() * 0.25
+      leaf.castShadow = true
+      pivot.add(leaf)
+      g.add(pivot)
+    }
+    scene.add(g)
+    colliders.push({ minX: x - 0.28, maxX: x + 0.28, minZ: z - 0.28, maxZ: z + 0.28 })
+  }
+  palm(-14, 13, 5.2)
+  palm(15.5, -13.5, 6)
+  palm(-12.5, -13.5, 4.6)
+  palm(10, 13.5, 5.6)
+
+  const signTex = (letter: string) => {
+    const cv = document.createElement('canvas')
+    cv.width = cv.height = 128
+    const g2 = cv.getContext('2d')!
+    g2.fillStyle = '#1c2228'
+    g2.fillRect(0, 0, 128, 128)
+    g2.strokeStyle = '#f2a33c'
+    g2.lineWidth = 8
+    g2.strokeRect(8, 8, 112, 112)
+    g2.fillStyle = '#f2e9d8'
+    g2.font = 'bold 84px sans-serif'
+    g2.textAlign = 'center'
+    g2.textBaseline = 'middle'
+    g2.fillText(letter, 64, 70)
+    const t = new THREE.CanvasTexture(cv)
+    t.colorSpace = THREE.SRGBColorSpace
+    return t
+  }
+  const signA = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), new THREE.MeshBasicMaterial({ map: signTex('A') }))
+  signA.position.set(-7, 3.4, -15.4)
+  scene.add(signA)
+  const signB = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), new THREE.MeshBasicMaterial({ map: signTex('B') }))
+  signB.position.set(15.4, 3.4, -2)
+  signB.rotation.y = -Math.PI / 2
+  scene.add(signB)
+
   return {
     solids,
     colliders,
