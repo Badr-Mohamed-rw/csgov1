@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Game } from './game/Game'
-import type { BannerData, FeedEntry, HudData, OverData, RadarData } from './game/Game'
+import type { BannerData, FeedEntry, HudData, OverData, RadarData, ShopState } from './game/Game'
 
 type Screen = 'menu' | 'play' | 'paused' | 'over'
 
@@ -45,6 +45,8 @@ export default function App() {
   const [lowHp, setLowHp] = useState(false)
   const [nades, setNades] = useState(1)
   const [hint, setHint] = useState(false)
+  const [shop, setShop] = useState<ShopState>({ open: false, money: 800, ak: false, awp: false, armor: false, nades: 1 })
+  const [scoped, setScoped] = useState(false)
 
   // imperative HUD refs
   const hpRef = useRef<HTMLSpanElement>(null)
@@ -66,6 +68,8 @@ export default function App() {
   const reloadRef = useRef<HTMLDivElement>(null)
   const vignetteTimer = useRef(0)
   const bannerTimer = useRef(0)
+  const moneyRef = useRef<HTMLSpanElement>(null)
+  const weaponRef = useRef<HTMLSpanElement>(null)
   const idc = useRef(0)
   const lowHpRef = useRef(false)
   const nadesRef = useRef(1)
@@ -161,6 +165,8 @@ export default function App() {
         nadesRef.current = h.nades
         setNades(h.nades)
       }
+      setTxt(moneyRef.current, `$${h.money.toLocaleString('en-US').replace(/,/g, ' ')}`)
+      setTxt(weaponRef.current, h.weapon)
     }
 
     const game = new Game(mountRef.current, {
@@ -202,6 +208,8 @@ export default function App() {
       },
       radar: drawRadar,
       over: (o) => { setOver(o); setScreen('over') },
+      shop: (s) => setShop(s),
+      scoped: (s) => setScoped(s),
       lockedChange: (l) => {
         setLocked(l)
         const g = gameRef.current
@@ -258,6 +266,10 @@ export default function App() {
             <div className="mt-1.5 border border-[#2b3844] bg-[#12181f]/90 px-3 py-1 text-[11px] font-bold tracking-widest text-[#8b98a7]">
               УСТРАНЕНО: <span ref={killsRef} className="font-display text-sm text-[#f2a33c]">0</span>
             </div>
+            <div className="mt-1.5 border border-[#2b4a35] bg-[#0f1b14]/90 px-3 py-1 text-[11px] font-bold tracking-widest text-[#8b98a7]">
+              <span ref={moneyRef} className="font-display text-base text-[#7fd08a]">$800</span>
+              <span className="ml-2 text-[9px]">МАГАЗИН: [B]</span>
+            </div>
           </div>
 
           {/* kill feed */}
@@ -265,16 +277,28 @@ export default function App() {
             {feed.map((f) => (
               <div key={f.id} className="feed-in flex items-center border border-[#2b3844] bg-[#12181f]/90 px-2.5 py-1 text-[12px] font-semibold">
                 <span className={f.byPlayer && f.killer === 'ВЫ' ? 'text-[#6fb7e8]' : 'text-[#f2a33c]'}>{f.killer}</span>
-                {f.head ? <span className="mx-1.5 text-[#e0453a]"><SkullIcon /></span> : f.killer === 'Снабжение' ? <span className="mx-1.5 text-[#8b98a7]">»</span> : <GunTag />}
+                {f.head ? <span className="mx-1.5 text-[#e0453a]"><SkullIcon /></span> : (f.killer === 'Снабжение' || f.killer === 'МАГАЗИН') ? <span className="mx-1.5 text-[#7fd08a]">»</span> : <GunTag />}
                 <span className={f.victim === 'ВЫ' ? 'text-[#e0453a]' : 'text-[#c8d2dd]'}>{f.victim}</span>
               </div>
             ))}
           </div>
 
           {/* crosshair */}
-          <div ref={xhRef} className="xh absolute left-1/2 top-1/2 z-10 h-0 w-0">
+          <div ref={xhRef} className="xh absolute left-1/2 top-1/2 z-10 h-0 w-0" style={{ display: scoped ? 'none' : undefined }}>
             <span className="xh-t" /><span className="xh-b" /><span className="xh-l" /><span className="xh-r" /><span className="xh-dot" />
           </div>
+          {/* AWP scope */}
+          {scoped && (
+            <div className="pointer-events-none absolute inset-0 z-10">
+              <div className="absolute inset-0" style={{ background: 'radial-gradient(circle at center, transparent 27.5%, rgba(4,7,9,0.985) 29%)' }} />
+              <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-black/85" />
+              <div className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-black/85" />
+              <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/70" />
+              <div className="absolute bottom-[16%] left-1/2 -translate-x-1/2 text-[10px] font-bold tracking-[0.3em] text-[#8b98a7]/70">
+                AWP · 4× ОПТИКА
+              </div>
+            </div>
+          )}
           {/* hitmarker */}
           <div ref={hitRef} className="hitmark absolute left-1/2 top-1/2 z-10 -ml-[11px] -mt-[11px]">
             <svg viewBox="0 0 22 22" className="h-[22px] w-[22px] stroke-current" strokeWidth="2.4" fill="none">
@@ -317,6 +341,51 @@ export default function App() {
             </div>
           )}
 
+          {/* buy menu */}
+          {shop.open && (
+            <div className="absolute left-1/2 top-1/2 w-[600px] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 border border-[#2b3844] bg-[#10161d]/95 shadow-[0_20px_60px_rgba(0,0,0,.7)]">
+              <div className="hazard h-1.5 w-full opacity-70" />
+              <div className="flex items-baseline justify-between border-b border-[#2b3844] bg-[#182029] px-5 py-2.5">
+                <span className="font-display text-lg tracking-[0.2em] text-[#f2a33c]">ЗАКУПКА</span>
+                <span className="font-display text-lg text-[#7fd08a]">
+                  ${shop.money.toLocaleString('en-US').replace(/,/g, ' ')}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 p-3">
+                {([
+                  { key: '1', id: 'ak', name: 'AK-47', desc: 'штурмовая винтовка · авто', price: 2700, owned: shop.ak, tag: 'ЕСТЬ' },
+                  { key: '2', id: 'awp', name: 'AWP', desc: 'снайперская · ПКМ — оптика', price: 4750, owned: shop.awp, tag: 'ЕСТЬ' },
+                  { key: '3', id: 'armor', name: 'БРОНЕЖИЛЕТ', desc: 'броня 100 · режет урон вдвое', price: 650, owned: shop.armor, tag: 'МАКС' },
+                  { key: '4', id: 'nade', name: 'ГРАНАТА', desc: `осколочная · у вас ${shop.nades}/2`, price: 300, owned: shop.nades >= 2, tag: 'МАКС' },
+                ] as const).map((it) => {
+                  const afford = shop.money >= it.price
+                  return (
+                    <div
+                      key={it.id}
+                      className={`flex items-center gap-3 border px-3 py-2.5 ${
+                        it.owned ? 'border-[#2b3844] bg-[#141a21]/70 opacity-55'
+                          : afford ? 'border-[#3a4a5c] bg-[#182029] hover:border-[#f2a33c]'
+                            : 'border-[#2b3844] bg-[#141a21]/70 opacity-70'
+                      }`}
+                    >
+                      <span className="key">{it.key}</span>
+                      <div className="flex-1">
+                        <div className="text-[13px] font-bold tracking-wider text-[#eae6dc]">{it.name}</div>
+                        <div className="text-[10px] text-[#8b98a7]">{it.desc}</div>
+                      </div>
+                      {it.owned
+                        ? <span className="text-[11px] font-bold tracking-widest text-[#8b98a7]">{it.tag}</span>
+                        : <span className={`font-display text-[15px] ${afford ? 'text-[#7fd08a]' : 'text-[#e0453a]'}`}>${it.price}</span>}
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="border-t border-[#2b3844] bg-[#182029] px-5 py-2 text-[10px] font-semibold tracking-[0.2em] text-[#8b98a7]">
+                <span className="key">1</span>–<span className="key">4</span> КУПИТЬ · <span className="key">B</span>/<span className="key">ESC</span> ЗАКРЫТЬ · ФРАГ = +$300 · ПОБЕДА = +$3250
+              </div>
+            </div>
+          )}
+
           {/* bottom left: health / armor */}
           <div className="absolute bottom-5 left-5 w-[240px]">
             <div className="flex items-end gap-3 border border-[#2b3844] bg-[#12181f]/90 px-4 py-2.5">
@@ -349,7 +418,10 @@ export default function App() {
                 <span ref={magRef} className="font-display text-5xl leading-none">30</span>
                 <span ref={resRef} className="font-display text-lg leading-none text-[#8b98a7]">/ 90</span>
               </div>
-              <div className="mt-1 text-[10px] font-bold tracking-[0.3em] text-[#8b98a7]">AK-47 · 7.62</div>
+              <div className="mt-1 text-[10px] font-bold tracking-[0.3em] text-[#8b98a7]">
+                <span ref={weaponRef}>2·DEAGLE</span>
+                <span className="ml-2 text-[#5f6d7d]">[1][2] СМЕНА</span>
+              </div>
             </div>
             <div className="mt-1.5 flex items-center justify-end gap-1.5 border border-[#2b3844] bg-[#12181f]/90 px-4 py-1.5 text-[#c9d68a]">
               <span className="mr-1 text-[10px] font-bold tracking-widest text-[#8b98a7]">ГРАНАТЫ</span>
@@ -360,7 +432,7 @@ export default function App() {
           {/* controls hint */}
           {hint && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 border border-[#2b3844] bg-[#12181f]/85 px-4 py-1.5 text-[11px] font-semibold tracking-wider text-[#8b98a7]">
-              WASD — движение · ведите мышь — обзор · ЛКМ — огонь · R — перезарядка · G — граната · ESC — пауза
+              WASD — движение · ЛКМ — огонь · ПКМ — оптика AWP · B — магазин · 1/2 — оружие · R — перезарядка · G — граната
             </div>
           )}
           {/* look-around hint */}
@@ -424,16 +496,19 @@ export default function App() {
                   <span><span className="key">G</span></span><span>граната</span>
                   <span><span className="key">SHIFT</span></span><span>тихий шаг — точность выше</span>
                   <span><span className="key">SPACE</span></span><span>прыжок</span>
+                  <span><span className="key">B</span></span><span>магазин: AK-47, AWP, броня, гранаты</span>
+                  <span><span className="key">1</span> <span className="key">2</span></span><span>винтовка / Deagle · <span className="key">ПКМ</span> оптика AWP</span>
                   <span><span className="key">ESC</span></span><span>пауза</span>
                 </div>
               </div>
               <div className="border border-[#2b3844] bg-[#12181f]/95">
                 <div className="border-b border-[#2b3844] bg-[#182029] px-4 py-2 text-[11px] font-bold tracking-[0.3em] text-[#f2a33c]">БРИФИНГ</div>
                 <ul className="space-y-1.5 px-4 py-3 text-[12px] leading-relaxed text-[#aab6c4]">
-                  <li><span className="font-bold text-[#eae6dc]">Хедшот</span> — 100 урона, мгновенное устранение.</li>
-                  <li>Каждый фраг даёт <span className="font-bold text-[#eae6dc]">+30 патронов</span> и гранату в следующем раунде.</li>
-                  <li>Раунд — <span className="font-bold text-[#eae6dc]">1:40</span>. Не успели — раунд потерян.</li>
-                  <li>Матч до <span className="font-bold text-[#f2a33c]">3 побед</span>. Боты злеют с каждым раундом.</li>
+                  <li>Карта — <span className="font-bold text-[#f2a33c]">Dust II</span>: лонг A, мид с дверями, туннели на B.</li>
+                  <li>Старт — <span className="font-bold text-[#eae6dc]">$800</span> и Deagle. Закупка — <span className="key">B</span>: AK-47, AWP, броня.</li>
+                  <li>Фраг — <span className="font-bold text-[#7fd08a]">+$300</span> (AWP +$100), победа в раунде — <span className="font-bold text-[#7fd08a]">+$3250</span>.</li>
+                  <li><span className="font-bold text-[#eae6dc]">Хедшот</span> — урон ×4. AWP убивает с тела.</li>
+                  <li>Матч до <span className="font-bold text-[#f2a33c]">3 побед</span>, раунд — 1:40.</li>
                 </ul>
               </div>
             </div>

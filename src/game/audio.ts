@@ -65,6 +65,23 @@ export class SFX {
     this.burst({ dur: 0.05, vol: 0.22, from: 3800, to: 900, type: 'highpass' })
     this.tone(150, 0.13, 0.5, 'triangle', 42)
   }
+  pistol() {
+    this.burst({ dur: 0.1, vol: 0.42, from: 2600, to: 320 })
+    this.burst({ dur: 0.04, vol: 0.18, from: 4200, to: 1400, type: 'highpass' })
+    this.tone(220, 0.09, 0.34, 'triangle', 70)
+  }
+  sniper() {
+    this.burst({ dur: 0.42, vol: 0.8, from: 1300, to: 55 })
+    this.burst({ dur: 0.12, vol: 0.3, from: 4200, to: 700, type: 'highpass' })
+    this.tone(88, 0.42, 0.62, 'sine', 26)
+  }
+  zoom(on: boolean) { this.tone(on ? 620 : 1050, 0.05, 0.13, 'square', on ? 1150 : 520) }
+  buy() {
+    this.tone(1320, 0.06, 0.17, 'square')
+    this.tone(1760, 0.09, 0.15, 'square', undefined, 0.055)
+  }
+  deny() { this.tone(230, 0.13, 0.2, 'square', 150) }
+  switchW() { this.burst({ dur: 0.05, vol: 0.12, from: 1500, to: 500 }); this.tone(500, 0.04, 0.1, 'square', 800, 0.03) }
   enemyShoot(dist: number) {
     const v = Math.max(0.06, Math.min(0.3, 2.4 / Math.max(4, dist)))
     this.burst({ dur: 0.12, vol: v, from: 1100, to: 150 })
