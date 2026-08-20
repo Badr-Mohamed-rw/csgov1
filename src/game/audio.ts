@@ -65,6 +65,31 @@ export class SFX {
     this.burst({ dur: 0.05, vol: 0.22, from: 3800, to: 900, type: 'highpass' })
     this.tone(150, 0.13, 0.5, 'triangle', 42)
   }
+  smg() {
+    this.burst({ dur: 0.08, vol: 0.34, from: 2100, to: 320 })
+    this.burst({ dur: 0.03, vol: 0.14, from: 4200, to: 1100, type: 'highpass' })
+    this.tone(190, 0.07, 0.3, 'triangle', 60)
+  }
+  shotgun() {
+    this.burst({ dur: 0.22, vol: 0.7, from: 900, to: 90 })
+    this.burst({ dur: 0.08, vol: 0.3, from: 2600, to: 500, type: 'highpass' })
+    this.tone(95, 0.2, 0.6, 'triangle', 34)
+    this.burst({ dur: 0.06, vol: 0.25, from: 1400, to: 300, delay: 0.42 }) // pump
+  }
+  lmg() {
+    this.burst({ dur: 0.1, vol: 0.42, from: 1500, to: 200 })
+    this.burst({ dur: 0.04, vol: 0.18, from: 3400, to: 800, type: 'highpass' })
+    this.tone(130, 0.1, 0.4, 'triangle', 46)
+  }
+  zeus() {
+    this.tone(2400, 0.25, 0.3, 'sawtooth', 120)
+    this.burst({ dur: 0.3, vol: 0.35, from: 5000, to: 300, type: 'highpass' })
+    this.tone(90, 0.3, 0.4, 'sine', 30)
+  }
+  knife() {
+    this.burst({ dur: 0.12, vol: 0.2, from: 3000, to: 700, type: 'bandpass' })
+    this.tone(320, 0.08, 0.15, 'triangle', 700)
+  }
   pistol() {
     this.burst({ dur: 0.1, vol: 0.42, from: 2600, to: 320 })
     this.burst({ dur: 0.04, vol: 0.18, from: 4200, to: 1400, type: 'highpass' })

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Game } from './game/Game'
-import type { BannerData, FeedEntry, HudData, OverData, RadarData } from './game/Game'
+import type { BannerData, FeedEntry, HudData, OverData, RadarData, WheelState } from './game/Game'
 
 type Screen = 'menu' | 'play' | 'paused' | 'over'
 
@@ -46,6 +46,8 @@ export default function App() {
   const [nades, setNades] = useState(1)
   const [hint, setHint] = useState(false)
   const [scoped, setScoped] = useState(false)
+  const [wheel, setWheel] = useState<WheelState | null>(null)
+  const [melee, setMelee] = useState(false)
 
   // imperative HUD refs
   const hpRef = useRef<HTMLSpanElement>(null)
@@ -68,9 +70,7 @@ export default function App() {
   const vignetteTimer = useRef(0)
   const bannerTimer = useRef(0)
   const weaponRef = useRef<HTMLSpanElement>(null)
-  const slot1Ref = useRef<HTMLSpanElement>(null)
-  const slot2Ref = useRef<HTMLSpanElement>(null)
-  const slot3Ref = useRef<HTMLSpanElement>(null)
+  const meleeRef = useRef(false)
   const idc = useRef(0)
   const lowHpRef = useRef(false)
   const nadesRef = useRef(1)
@@ -167,18 +167,13 @@ export default function App() {
         setNades(h.nades)
       }
       setTxt(weaponRef.current, h.weapon)
-      const num = h.weapon.charAt(0)
-      const slots: [RefObject<HTMLSpanElement | null>, string][] = [[slot1Ref, '1'], [slot2Ref, '2'], [slot3Ref, '3']]
-      for (const [r, n] of slots) {
-        const el = r.current
-        if (!el || !el.parentElement) continue
-        const on = num === n
-        if (el.dataset.on !== String(on)) {
-          el.dataset.on = String(on)
-          el.style.color = on ? '#f2a33c' : '#8b98a7'
-          el.parentElement.style.borderColor = on ? '#f2a33c' : '#2b3844'
-          el.parentElement.style.background = on ? 'rgba(34,20,9,0.9)' : 'rgba(18,24,31,0.85)'
-        }
+      if (h.melee) {
+        setTxt(magRef.current, '—')
+        setTxt(resRef.current, '')
+      }
+      if (h.melee !== meleeRef.current) {
+        meleeRef.current = h.melee
+        setMelee(h.melee)
       }
     }
 
@@ -222,6 +217,7 @@ export default function App() {
       radar: drawRadar,
       over: (o) => { setOver(o); setScreen('over') },
       scoped: (s) => setScoped(s),
+      wheel: (w) => setWheel(w),
       lockedChange: (l) => {
         setLocked(l)
         const g = gameRef.current
@@ -253,6 +249,42 @@ export default function App() {
       {/* ============ HUD ============ */}
       {(screen === 'play' || screen === 'paused') && (
         <div className="pointer-events-none absolute inset-0 z-20">
+          {/* weapon wheel */}
+          {wheel && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="absolute inset-0 bg-[#0a0e13]/70" />
+              <div className="relative h-[420px] w-[420px]">
+                <div className="absolute left-1/2 top-1/2 h-[110px] w-[110px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#2b3844] bg-[#12181f]/90" />
+                <div className="font-display absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
+                  <div className="text-[13px] tracking-widest text-[#f2a33c]">{wheel.items[wheel.active]?.short}</div>
+                  <div className="mt-0.5 text-[9px] tracking-[0.2em] text-[#8b98a7]">{wheel.items[wheel.active]?.cat}</div>
+                </div>
+                {wheel.items.map((it, i) => {
+                  const n = wheel.items.length
+                  const ang = (i / n) * Math.PI * 2 - Math.PI / 2
+                  const r = 165
+                  const x = Math.cos(ang) * r
+                  const y = Math.sin(ang) * r
+                  const on = i === wheel.active
+                  return (
+                    <div
+                      key={it.id}
+                      className={`absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center border px-2.5 py-1.5 text-center transition-colors duration-75 ${
+                        on ? 'border-[#f2a33c] bg-[#221409]/95' : 'border-[#2b3844] bg-[#12181f]/85'
+                      }`}
+                      style={{ left: `calc(50% + ${x}px)`, top: `calc(50% + ${y}px)` }}
+                    >
+                      <span className={`font-display text-[12px] leading-tight ${on ? 'text-[#f2a33c]' : 'text-[#c8d2dd]'}`}>{it.short}</span>
+                      <span className="text-[8px] tracking-[0.15em] text-[#8b98a7]">{it.cat}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="absolute bottom-14 left-1/2 -translate-x-1/2 text-[11px] font-semibold tracking-[0.25em] text-[#8b98a7]">
+                ВЕДИТЕ МЫШЬ — ВЫБОР · ОТПУСТИТЕ TAB
+              </div>
+            </div>
+          )}
           {/* ambient vignette */}
           <div className="pointer-events-none absolute inset-0 z-10" style={{ background: 'radial-gradient(ellipse at center, transparent 58%, rgba(4,7,11,0.45) 100%)' }} />
           {/* top center: score + timer */}
@@ -352,18 +384,9 @@ export default function App() {
             </div>
           )}
 
-          {/* weapon slots */}
-          <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-stretch gap-1 text-[11px] font-bold tracking-wider">
-            {[
-              { k: '1', n: 'AK-47' },
-              { k: '2', n: 'DEAGLE' },
-              { k: '3', n: 'AWP' },
-            ].map((s) => (
-              <div key={s.k} className="flex items-center gap-1.5 border border-[#2b3844] bg-[#12181f]/85 px-2.5 py-1 text-[#8b98a7]">
-                <span className="key">{s.k}</span>
-                <span ref={s.k === '1' ? slot1Ref : s.k === '2' ? slot2Ref : slot3Ref}>{s.n}</span>
-              </div>
-            ))}
+          {/* weapon hint */}
+          <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-1.5 border border-[#2b3844] bg-[#12181f]/85 px-3 py-1 text-[10px] font-bold tracking-[0.2em] text-[#8b98a7]">
+            <span className="key">TAB</span> АРСЕНАЛ · <span className="key">1–9</span> / КОЛЕСО — СМЕНА
           </div>
 
           {/* bottom left: health / armor */}
@@ -395,12 +418,13 @@ export default function App() {
           <div className="absolute bottom-5 right-5 text-right">
             <div className="border border-[#2b3844] bg-[#12181f]/90 px-5 py-2.5">
               <div className="flex items-baseline justify-end gap-2">
-                <span ref={magRef} className="font-display text-5xl leading-none">30</span>
-                <span ref={resRef} className="font-display text-lg leading-none text-[#8b98a7]">/ 90</span>
+                {melee && <span className="font-display text-sm tracking-widest text-[#f2a33c]">БЛИЖНИЙ БОЙ</span>}
+                <span ref={magRef} className={`font-display text-5xl leading-none ${melee ? 'hidden' : ''}`}>30</span>
+                <span ref={resRef} className={`font-display text-lg leading-none text-[#8b98a7] ${melee ? 'hidden' : ''}`}>/ 90</span>
               </div>
               <div className="mt-1 text-[10px] font-bold tracking-[0.3em] text-[#8b98a7]">
-                <span ref={weaponRef}>2·DEAGLE</span>
-                <span className="ml-2 text-[#5f6d7d]">[1][2][3] / КОЛЕСО</span>
+                <span ref={weaponRef}>13·DEAGLE</span>
+                <span className="ml-2 text-[#5f6d7d]">TAB — АРСЕНАЛ</span>
               </div>
             </div>
             <div className="mt-1.5 flex items-center justify-end gap-1.5 border border-[#2b3844] bg-[#12181f]/90 px-4 py-1.5 text-[#c9d68a]">
@@ -412,7 +436,7 @@ export default function App() {
           {/* controls hint */}
           {hint && (
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 border border-[#2b3844] bg-[#12181f]/85 px-4 py-1.5 text-[11px] font-semibold tracking-wider text-[#8b98a7]">
-              WASD — движение · ЛКМ — огонь · 1/2/3 или колесо — оружие · ПКМ — оптика AWP · R — перезарядка · G — граната
+              WASD — движение · ЛКМ — огонь · TAB — арсенал (19 стволов) · 1–9 / колесо — смена · R — перезарядка · G — граната
             </div>
           )}
           {/* look-around hint */}
@@ -476,8 +500,9 @@ export default function App() {
                   <span><span className="key">G</span></span><span>граната</span>
                   <span><span className="key">SHIFT</span></span><span>тихий шаг — точность выше</span>
                   <span><span className="key">SPACE</span></span><span>прыжок</span>
-                  <span><span className="key">1</span><span className="key">2</span><span className="key">3</span></span><span>AK-47 / Deagle / AWP · колесо мыши тоже листает</span>
-                  <span><span className="key">ПКМ</span></span><span>оптика AWP ×4</span>
+                  <span><span className="key">TAB</span></span><span>арсенал: 19 стволов — винтовки, ПП, снайперки, дробовик, нож</span>
+                  <span><span className="key">1</span>–<span className="key">9</span> / колесо</span><span>быстрая смена оружия</span>
+                  <span><span className="key">ПКМ</span></span><span>оптика AWP / SSG 08 / AUG</span>
                   <span><span className="key">ESC</span></span><span>пауза</span>
                 </div>
               </div>
@@ -485,8 +510,8 @@ export default function App() {
                 <div className="border-b border-[#2b3844] bg-[#182029] px-4 py-2 text-[11px] font-bold tracking-[0.3em] text-[#f2a33c]">БРИФИНГ</div>
                 <ul className="space-y-1.5 px-4 py-3 text-[12px] leading-relaxed text-[#aab6c4]">
                   <li>Карта — <span className="font-bold text-[#f2a33c]">Dust II</span>: лонг A, мид с дверями, туннели на B.</li>
-                  <li>Все стволы сразу: <span className="key">1</span> AK-47 · <span className="key">2</span> Deagle · <span className="key">3</span> AWP — или колесо мыши.</li>
-                  <li><span className="font-bold text-[#eae6dc]">Хедшот</span> — урон ×4. AWP убивает с тела, <span className="key">ПКМ</span> — оптика.</li>
+                  <li>Арсенал — <span className="key">TAB</span>: AK, M4, AUG, FAMAS, AWP, SSG, ПП, дробовик, Negev, пистолеты, Zeus и нож.</li>
+                  <li><span className="font-bold text-[#eae6dc]">Хедшот</span> — урон ×4. Снайперки убивают с тела, <span className="key">ПКМ</span> — оптика.</li>
                   <li>Матч до <span className="font-bold text-[#f2a33c]">3 побед</span>, раунд — 1:40. Боты злеют с каждым раундом.</li>
                 </ul>
               </div>
