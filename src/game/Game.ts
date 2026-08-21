@@ -218,6 +218,10 @@ export class Game {
   private cooldown = 0
   private firing = false
 
+  // бонус гранат за rewarded-рекламу
+  private grenadeBonus = 0
+  addGrenadeBonus(n: number) { this.grenadeBonus += n }
+
   // сенсорный ввод (мобильные)
   private joyX = 0
   private joyY = 0
@@ -1035,7 +1039,8 @@ export class Game {
     for (const id of WEAPON_ORDER) {
       this.ammo[id] = { mag: WEAPONS[id].mag, res: WEAPONS[id].res }
     }
-    this.nades = Math.min(3, this.round)
+    this.nades = Math.min(3, this.round) + this.grenadeBonus
+    this.grenadeBonus = 0
     this.reloading = false
     this.firing = false
     this.scoped = false
