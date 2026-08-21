@@ -1,8 +1,38 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Game, IS_TOUCH, PERF_LOW, LOW_GPU } from './game/Game'
 import type { BannerData, FeedEntry, HudData, OverData, RadarData, WheelState } from './game/Game'
+import { detectLang, getLang, setLang, t, type Lang } from './game/i18n'
+import {
+  initYandex, isYandex, showFullscreenAdv, saveCloud, loadCloud,
+  onPlatformPause, yandexLang, gameplayStop,
+} from './game/yandex'
 
 const WEAPON_LABELS = ['AK-47', 'UZI', 'P90', 'AWP', 'DEAGLE', 'НОЖ']
+
+/* ---------- настройки и прогресс (пункты 1.9, 2.6, 6.2) ---------- */
+export interface Settings { volume: number; sens: number; quality: 'auto' | 'high' | 'low'; lang: Lang }
+const DEF_SETTINGS: Settings = { volume: 0.8, sens: 1, quality: 'auto', lang: 'ru' }
+export interface Progress { wins: number; losses: number; kills: number; deaths: number; matches: number; bestKills: number }
+const DEF_PROGRESS: Progress = { wins: 0, losses: 0, kills: 0, deaths: 0, matches: 0, bestKills: 0 }
+const SETTINGS_KEY = 'cs3d_settings_v2'
+const PROGRESS_KEY = 'cs3d_progress_v2'
+
+function loadSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY)
+    if (raw) return { ...DEF_SETTINGS, ...JSON.parse(raw) }
+  } catch { /* noop */ }
+  return { ...DEF_SETTINGS }
+}
+function persistSettings(s: Settings) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)) } catch { /* noop */ } }
+function loadProgress(): Progress {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY)
+    if (raw) return { ...DEF_PROGRESS, ...JSON.parse(raw) }
+  } catch { /* noop */ }
+  return { ...DEF_PROGRESS }
+}
+function persistProgress(p: Progress) { try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(p)) } catch { /* noop */ } }
 
 type Screen = 'menu' | 'play' | 'paused' | 'over'
 
@@ -192,6 +222,12 @@ export default function App() {
   const [melee, setMelee] = useState(false)
   const [isMobile] = useState(() => IS_TOUCH)
   const [activeWeapon, setActiveWeapon] = useState(2)
+  const [settings, setSettings] = useState<Settings>(() => loadSettings())
+  const [progress, setProgress] = useState<Progress>(() => loadProgress())
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [howtoOpen, setHowtoOpen] = useState(false)
+  const [lang, setLangState] = useState<Lang>(() => getLang())
+  const [portrait, setPortrait] = useState(false)
 
   // imperative HUD refs
   const hpRef = useRef<HTMLSpanElement>(null)
@@ -298,7 +334,7 @@ export default function App() {
       const ss = String(h.timer % 60).padStart(2, '0')
       setTxt(timerRef.current, `${mm}:${ss}`)
       if (timerRef.current) timerRef.current.classList.toggle('blink-fast', h.timer <= 10)
-      setTxt(enemiesRef.current, `ОСТАЛОСЬ: ${h.enemies}`)
+      setTxt(enemiesRef.current, `${t('enemies')}: ${h.enemies}`)
       if (xhRef.current) xhRef.current.style.setProperty('--g', `${h.spreadPx}px`)
       if (reloadRef.current) reloadRef.current.style.display = h.reloading ? 'block' : 'none'
       const isLow = h.hp > 0 && h.hp < 35
@@ -371,11 +407,66 @@ export default function App() {
       },
     })
     gameRef.current = game
+    // применяем сохранённые настройки при старте
+    const s0 = loadSettings()
+    game.setSettings({ volume: s0.volume, sens: s0.sens, quality: s0.quality })
     return () => {
       game.dispose()
       gameRef.current = null
     }
   }, [])
+
+  /* ---------- Yandex SDK, язык, прогресс, ориентация, платформенная пауза ---------- */
+  useEffect(() => {
+    let offPause: (() => void) | null = null
+    initYandex().then(() => {
+      // автоопределение языка (пункт 2.14): SDK -> браузер
+      const detected = isYandex() ? yandexLang() : detectLang()
+      const saved = loadSettings()
+      const useLang = saved.lang || detected
+      setLang(useLang)
+      setLangState(useLang)
+      // облачный прогресс (пункт 1.9)
+      loadCloud<Progress>().then((p) => { if (p) setProgress({ ...DEF_PROGRESS, ...p }) })
+      offPause = onPlatformPause(() => {
+        const g = gameRef.current
+        if (g && g.state === 'playing') { g.pause(); setScreen('paused') }
+      })
+    })
+    const onOrient = () => setPortrait(IS_TOUCH && window.innerHeight > window.innerWidth)
+    onOrient()
+    window.addEventListener('orientationchange', onOrient)
+    window.addEventListener('resize', onOrient)
+    return () => {
+      window.removeEventListener('orientationchange', onOrient)
+      window.removeEventListener('resize', onOrient)
+      offPause?.()
+    }
+  }, [])
+
+  /* ---------- сохранение настроек + применение к игре ---------- */
+  const updateSettings = (patch: Partial<Settings>) => {
+    const next = { ...settings, ...patch }
+    setSettings(next)
+    persistSettings(next)
+    if (patch.lang) { setLang(patch.lang); setLangState(patch.lang) }
+    gameRef.current?.setSettings({ volume: next.volume, sens: next.sens, quality: next.quality })
+  }
+
+  /* ---------- сохранение прогресса после матча (пункты 1.9, 2.6) ---------- */
+  const saveMatchProgress = (o: OverData) => {
+    const next: Progress = {
+      wins: progress.wins + (o.result === 'victory' ? 1 : 0),
+      losses: progress.losses + (o.result === 'defeat' ? 1 : 0),
+      kills: progress.kills + o.kills,
+      deaths: progress.deaths + o.deaths,
+      matches: progress.matches + 1,
+      bestKills: Math.max(progress.bestKills, o.kills),
+    }
+    setProgress(next)
+    persistProgress(next)
+    saveCloud(next)
+  }
 
   const startGame = () => {
     setFeed([])
@@ -383,7 +474,35 @@ export default function App() {
     setHint(true)
     window.setTimeout(() => setHint(false), 9000)
     setScreen('play')
+    // пункт 1.6.1.1: полноэкранный режим на мобильных
+    if (IS_TOUCH) {
+      try {
+        const el = document.documentElement
+        if (el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(() => {})
+      } catch { /* noop */ }
+    }
     gameRef.current?.startMatch()
+  }
+
+  // сохранение прогресса один раз за матч
+  const savedFor = useRef<OverData | null>(null)
+  useEffect(() => {
+    if (over && savedFor.current !== over) {
+      savedFor.current = over
+      saveMatchProgress(over)
+    }
+  }, [over]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // rewarded video: бонус к следующему матчу (пункт 4.5)
+  const [adBonus, setAdBonus] = useState(false)
+  const watchAdForBonus = () => {
+    if (!isYandex()) return
+    gameplayStop()
+    gameRef.current?.setAudioPaused(true)
+    showFullscreenAdv(() => {
+      gameRef.current?.setAudioPaused(false)
+      setAdBonus(true)
+    })
   }
 
   /* ============================== render ============================== */

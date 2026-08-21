@@ -4,10 +4,30 @@ export class SFX {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
   private noise: AudioBuffer | null = null
+  private volume = 0.8
+  private muted = false
+
+  /** громкость 0..1 (настройки) */
+  setVolume(v: number) {
+    this.volume = Math.max(0, Math.min(1, v))
+    this.applyGain()
+  }
+
+  /** полный мьют (потеря фокуса / настройки) */
+  setMuted(m: boolean) {
+    this.muted = m
+    this.applyGain()
+    if (m && this.ctx && this.ctx.state === 'running') this.ctx.suspend()
+    if (!m && this.ctx && this.ctx.state === 'suspended') this.ctx.resume()
+  }
+
+  private applyGain() {
+    if (this.master) this.master.gain.value = this.muted ? 0 : this.volume * 0.5
+  }
 
   ensure() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume()
+      if (this.ctx.state === 'suspended' && !this.muted) this.ctx.resume()
       return
     }
     const Ctor: typeof AudioContext =
@@ -18,7 +38,7 @@ export class SFX {
     comp.ratio.value = 9
     comp.connect(this.ctx.destination)
     this.master = this.ctx.createGain()
-    this.master.gain.value = 0.5
+    this.master.gain.value = this.muted ? 0 : this.volume * 0.5
     this.master.connect(comp)
     const len = this.ctx.sampleRate
     this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate)

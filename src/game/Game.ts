@@ -4,6 +4,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { buildMap, collideMove, groundSupport, type MapData } from './map'
+import { BOT_NAMES, getLang, t } from './i18n'
+import { gameplayStart, gameplayStop } from './yandex'
 import { Bot, type BotHooks } from './bots'
 import { SFX } from './audio'
 
@@ -36,7 +38,8 @@ export interface GameHooks {
 
 type State = 'attract' | 'playing' | 'roundEnd' | 'dying' | 'paused'
 
-const NAMES = ['Феникс', 'Гюрза', 'Кобра', 'Шакал', 'Коршун', 'Таран', 'Волк', 'Гадюка', 'Беркут', 'Росомаха']
+/* имена ботов — из локали */
+const NAMES = () => BOT_NAMES[getLang()]
 const ROUND_TIME = 115
 const WINS_NEEDED = 3
 
@@ -233,6 +236,10 @@ export class Game {
   private keys: Record<string, boolean> = {}
   private deathT = 0
 
+  // настройки (применяются извне)
+  private sens = 1
+  private qualitySetting: 'auto' | 'high' | 'low' = 'auto'
+
   // match
   private round = 0
   private scoreA = 0
@@ -368,11 +375,10 @@ export class Game {
     // постобработка: bloom + тонмаппинг
     this.composer = new EffectComposer(this.renderer)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
-    // bloom — дорогая операция, на слабых GPU и телефонах отключаем
-    if (!PERF_LOW) {
-      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.5, 0.5, 0.82)
-      this.composer.addPass(this.bloomPass)
-    }
+    // bloom — дорогая операция, на слабых GPU и телефонах отключён по умолчанию
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.5, 0.5, 0.82)
+    this.bloomPass.enabled = !PERF_LOW
+    this.composer.addPass(this.bloomPass)
     this.composer.addPass(new OutputPass())
 
     this.pos.set(this.map.playerSpawn.x, 0, this.map.playerSpawn.z)
@@ -795,7 +801,7 @@ export class Game {
     if (this.state !== 'playing') return
     if (this.locked) {
       // захват мыши: движение 1:1
-      const s = 0.0032
+      const s = 0.0032 * this.sens
       this.yaw -= e.movementX * s
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - e.movementY * s))
     } else {
@@ -810,7 +816,7 @@ export class Game {
       const dy = e.movementY ?? e.clientY - this.lastCY
       this.lastCX = e.clientX
       this.lastCY = e.clientY
-      const s = 0.0045
+      const s = 0.0045 * this.sens
       this.yaw -= dx * s
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - dy * s))
     }
@@ -853,7 +859,12 @@ export class Game {
     this.composer.setSize(w, h)
   }
   private onVisibility = () => {
-    if (document.hidden && this.state === 'playing') this.pause()
+    if (document.hidden) {
+      this.sfx.setMuted(true) // пункт 1.3: звук останавливается при потере фокуса
+      if (this.state === 'playing') this.pause()
+    } else {
+      this.sfx.setMuted(false)
+    }
   }
   private onContext = (e: Event) => e.preventDefault()
 
@@ -881,6 +892,7 @@ export class Game {
 
   startMatch() {
     this.sfx.ensure()
+    gameplayStart()
     this.scoreA = 0
     this.scoreB = 0
     this.round = 0
@@ -896,6 +908,8 @@ export class Game {
   resume() {
     if (this.state !== 'paused') return
     this.state = 'playing'
+    this.sfx.setMuted(false)
+    gameplayStart()
     this.requestLock()
   }
 
@@ -904,6 +918,7 @@ export class Game {
     this.state = 'paused'
     this.firing = false
     this.mouseInit = false
+    gameplayStop()
     if (this.scoped) this.toggleScope(false)
     if (document.pointerLockElement) document.exitPointerLock()
     else this.hooks.lockedChange(false)
@@ -913,6 +928,7 @@ export class Game {
     window.clearTimeout(this.roundTimeout)
     this.clearEntities()
     this.state = 'attract'
+    gameplayStop()
     if (this.scoped) this.toggleScope(false)
     if (document.pointerLockElement) document.exitPointerLock()
   }
@@ -946,6 +962,33 @@ export class Game {
     if (i >= 0 && i < WEAPON_ORDER.length) this.switchTo(WEAPON_ORDER[i])
   }
   cycleWeaponPub(dir: number) { this.cycleWeapon(dir) }
+
+  /* ---------- настройки ---------- */
+  setSettings(s: { volume?: number; sens?: number; quality?: 'auto' | 'high' | 'low' }) {
+    if (s.volume !== undefined) this.sfx.setVolume(s.volume)
+    if (s.sens !== undefined) this.sens = Math.max(0.3, Math.min(2.5, s.sens))
+    if (s.quality !== undefined) {
+      this.qualitySetting = s.quality
+      this.applyQuality()
+    }
+  }
+
+  private applyQuality() {
+    const q = this.qualitySetting
+    let pr: number
+    let bloom: boolean
+    if (q === 'low') { pr = 1; bloom = false }
+    else if (q === 'high') { pr = Math.min(window.devicePixelRatio || 1, 1.75); bloom = true }
+    else { pr = Math.min(window.devicePixelRatio || 1, PERF_LOW ? 1 : 1.75); bloom = !PERF_LOW }
+    this.renderer.setPixelRatio(pr)
+    this.renderer.setSize(this.container.clientWidth, this.container.clientHeight)
+    this.composer.setSize(this.container.clientWidth, this.container.clientHeight)
+    if (this.bloomPass) this.bloomPass.enabled = bloom
+    this.degraded = q === 'low' // в ручном режиме автодеградацию не дёргаем
+  }
+
+  /** Пауза/фокус платформы: остановить звук (пункт 1.3 требований) */
+  setAudioPaused(m: boolean) { this.sfx.setMuted(m) }
 
   dispose() {
     cancelAnimationFrame(this.raf)
@@ -1013,7 +1056,8 @@ export class Game {
     }
     for (let i = 0; i < count; i++) {
       const s = spawns[i % spawns.length]
-      const bot = new Bot(NAMES[i % NAMES.length], s.x + (Math.random() - 0.5), s.z + (Math.random() - 0.5), (3 + this.round * 0.22 + Math.random() * 0.3) * 1.35, botHooks)
+      const names = NAMES()
+      const bot = new Bot(names[i % names.length], s.x + (Math.random() - 0.5), s.z + (Math.random() - 0.5), (3 + this.round * 0.22 + Math.random() * 0.3) * 1.35, botHooks)
       bot.group.rotation.y = Math.random() * Math.PI * 2
       this.scene.add(bot.group)
       bot.group.updateMatrixWorld(true)
@@ -1023,8 +1067,8 @@ export class Game {
     this.state = 'playing'
     const need = WINS_NEEDED - this.scoreA
     this.hooks.banner({
-      title: `РАУНД ${this.round}`,
-      sub: `противников: ${count} · стволы: [1][2][3] / колесо`,
+      title: `${t('round')} ${this.round}`,
+      sub: `${t('roundSub')}: ${count}`,
       tone: 'info',
     })
     this.sfx.beep(760, 0.12, 0.22)
@@ -1044,8 +1088,8 @@ export class Game {
     if (document.pointerLockElement) document.exitPointerLock()
     const done = this.scoreA >= WINS_NEEDED || this.scoreB >= WINS_NEEDED
     this.hooks.banner({
-      title: won ? 'РАУНД ВЫИГРАН' : 'РАУНД ПРОИГРАН',
-      sub: `счёт ${this.scoreA} : ${this.scoreB}`,
+      title: won ? t('roundWon') : t('roundLost'),
+      sub: `${t('score')} ${this.scoreA} : ${this.scoreB}`,
       tone: won ? 'win' : 'lose',
     })
     if (won) this.sfx.win()
@@ -1226,7 +1270,7 @@ export class Game {
       this.state = 'dying'
       this.deathT = 0
       this.firing = false
-      this.hooks.banner({ title: 'ВЫ УБИТЫ', sub: 'раунд потерян', tone: 'lose' })
+      this.hooks.banner({ title: t('youKilled'), sub: t('roundLostSub'), tone: 'lose' })
       this.sfx.lose()
     }
   }
@@ -1334,7 +1378,7 @@ export class Game {
     const sc = 0.7 + Math.random() * 0.9
     d.m.scale.set(sc, sc, sc)
     d.m.visible = true
-    d.life = 7
+    d.life = 10 // следы от пуль исчезают через 10 секунд
   }
 
   /* ================= grenade ================= */
@@ -1596,7 +1640,7 @@ export class Game {
   private updatePlaying(dt: number) {
     // ---- обзор с сенсорной зоны (накопленные дельты) ----
     if (this.lookDX !== 0 || this.lookDY !== 0) {
-      const sens = 0.0042
+      const sens = 0.0042 * this.sens
       this.yaw -= this.lookDX * sens
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch - this.lookDY * sens))
       this.lookDX = 0
