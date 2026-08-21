@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { Game, IS_TOUCH } from './game/Game'
+import { Game, IS_TOUCH, PERF_LOW, LOW_GPU } from './game/Game'
 import type { BannerData, FeedEntry, HudData, OverData, RadarData, WheelState } from './game/Game'
 
 const WEAPON_LABELS = ['AK-47', 'UZI', 'P90', 'AWP', 'DEAGLE', 'НОЖ']
@@ -242,14 +242,14 @@ export default function App() {
       g.strokeStyle = 'rgba(139,152,167,0.22)'
       g.lineWidth = 1
       g.stroke()
-      const k = (C - 8) / 22
+      const k = (C - 8) / 32
       const cy = Math.cos(d.yaw)
       const sy = Math.sin(d.yaw)
       const rot = (dx: number, dz: number): [number, number] => [dx * cy - dz * sy, dx * sy + dz * cy]
       // map border
       g.strokeStyle = 'rgba(139,152,167,0.3)'
       g.beginPath()
-      const corners: [number, number][] = [[-20, -20], [20, -20], [20, 20], [-20, 20]]
+      const corners: [number, number][] = [[-30, -30], [30, -30], [30, 30], [-30, 30]]
       corners.forEach(([x, z], i) => {
         const [rx, ry] = rot(x - d.px, z - d.pz)
         if (i === 0) g.moveTo(rx * k, ry * k)
@@ -440,7 +440,7 @@ export default function App() {
               <span ref={scoreARef} className="font-display text-xl leading-none text-[#6fb7e8]">0</span>
             </div>
             <div className="flex flex-col items-center justify-center border-y border-[#3a4a5c] bg-[#12181f]/95 px-5 py-1">
-              <span ref={timerRef} className="font-display text-2xl leading-none tracking-wider">1:40</span>
+              <span ref={timerRef} className="font-display text-2xl leading-none tracking-wider">1:55</span>
               <span ref={enemiesRef} className="mt-0.5 text-[10px] font-semibold tracking-[0.2em] text-[#8b98a7]">ОСТАЛОСЬ: 0</span>
             </div>
             <div className="flex items-center gap-2 border border-[#5c3a24] bg-[#221409]/90 px-4 py-1.5">
@@ -631,6 +631,13 @@ export default function App() {
                 <span className="inline-block h-[3px] w-10 bg-[#f2a33c]" />
                 <span className="text-[11px] font-bold tracking-[0.4em] text-[#8b98a7]">БРАУЗЕРНЫЙ ШУТЕР · THREE.JS</span>
               </div>
+              <div className="mb-3 inline-flex items-center gap-2 border border-[#2b3844] bg-[#12181f]/80 px-2.5 py-1 text-[10px] font-bold tracking-[0.2em]">
+                <span className={`inline-block h-1.5 w-1.5 rounded-full ${PERF_LOW ? 'bg-[#f2a33c]' : 'bg-[#7fd08a]'}`} />
+                <span className={PERF_LOW ? 'text-[#f2a33c]' : 'text-[#7fd08a]'}>
+                  {PERF_LOW ? (LOW_GPU ? 'ЭКОНОМ-ГРАФИКА (слабый GPU)' : 'ЭКОНОМ-ГРАФИКА (сенсор)') : 'ПОЛНАЯ ГРАФИКА'}
+                </span>
+                <span className="text-[#5f6d7d]">· авто-детект + адаптация под FPS</span>
+              </div>
               <h1 className="title-glow font-display text-[64px] leading-[0.9] md:text-[120px]">
                 CS<span className="text-[#f2a33c]">&nbsp;3D</span>
               </h1>
@@ -690,7 +697,7 @@ export default function App() {
                   <li>Арсенал — <span className="key">TAB</span>: AK-47, UZI, P90, AWP, Deagle и нож. Колесо мыши листает стволы.</li>
                   <li><span className="font-bold text-[#eae6dc]">Хедшот</span> — урон ×4. AWP убивает с тела, <span className="key">ПКМ</span> — оптика ×4.</li>
                   <li><span className="key">SPACE</span> — прыжок: запрыгивайте на ящики, бочки и контейнеры для обзора сверху.</li>
-                  <li>Матч до <span className="font-bold text-[#f2a33c]">3 побед</span>, раунд — 1:40. Боты злеют с каждым раундом.</li>
+                  <li>Матч до <span className="font-bold text-[#f2a33c]">3 побед</span>, раунд — 1:55. Боты злеют с каждым раундом.</li>
                 </ul>
               </div>
             </div>

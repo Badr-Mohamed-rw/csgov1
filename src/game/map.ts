@@ -469,9 +469,12 @@ export function groundSupport(x: number, z: number, feetY: number, r: number, co
 
 /* ======================= КАРТА ======================= */
 
-export function buildMap(scene: THREE.Scene): MapData {
+export function buildMap(sceneArg: THREE.Scene, detailed = true): MapData {
+  // вся карта живёт в группе — так её можно масштабировать целиком
+  const scene = new THREE.Group()
   const solids: THREE.Mesh[] = []
   const colliders: AABB[] = []
+  const S = 1.5 // масштаб мира: арена 60×60 м
 
   const groundTex = canvasTex(256, drawGround, 10, 10)
   const matGround = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1 })
@@ -484,10 +487,13 @@ export function buildMap(scene: THREE.Scene): MapData {
   const matStucco = new THREE.MeshStandardMaterial({ map: stuccoTex, roughness: 0.92 })
 
   const crateTex = canvasTex(256, drawCrate)
+  const contRustTex = canvasTex(256, (g, s) => drawContainer(g, s, '#9c4f28', 'MIRAGE'), 2, 1)
+  const contOliveTex = canvasTex(256, (g, s) => drawContainer(g, s, '#57613c', 'DUST'), 2, 1)
+  const barrelTex = canvasTex(128, drawBarrel, 2, 1)
   const matCrate = new THREE.MeshStandardMaterial({ map: crateTex, roughness: 0.9 })
-  const matRust = new THREE.MeshStandardMaterial({ map: canvasTex(256, (g, s) => drawContainer(g, s, '#9c4f28', 'MIRAGE'), 2, 1), roughness: 0.7, metalness: 0.3 })
-  const matOlive = new THREE.MeshStandardMaterial({ map: canvasTex(256, (g, s) => drawContainer(g, s, '#57613c', 'DUST'), 2, 1), roughness: 0.7, metalness: 0.3 })
-  const matBarrel = new THREE.MeshStandardMaterial({ map: canvasTex(128, drawBarrel, 2, 1), roughness: 0.65, metalness: 0.35 })
+  const matRust = new THREE.MeshStandardMaterial({ map: contRustTex, roughness: 0.7, metalness: 0.3 })
+  const matOlive = new THREE.MeshStandardMaterial({ map: contOliveTex, roughness: 0.7, metalness: 0.3 })
+  const matBarrel = new THREE.MeshStandardMaterial({ map: barrelTex, roughness: 0.65, metalness: 0.35 })
   const matSandbag = new THREE.MeshStandardMaterial({ color: 0xb3a06f, roughness: 1 })
 
   const deckTex = canvasTex(128, (g, s) => drawPlanks(g, s, '#8d6b3e'), 2, 2)
@@ -839,9 +845,9 @@ export function buildMap(scene: THREE.Scene): MapData {
   /* ---------- камни ---------- */
   const pebGeo = new THREE.BoxGeometry(0.09, 0.05, 0.09)
   const pebMat = new THREE.MeshStandardMaterial({ color: 0x9b8a63, roughness: 1 })
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < (detailed ? 170 : 70); i++) {
     const p = new THREE.Mesh(pebGeo, pebMat)
-    p.position.set((Math.random() - 0.5) * 38, 0.02, (Math.random() - 0.5) * 38)
+    p.position.set((Math.random() - 0.5) * 56, 0.02, (Math.random() - 0.5) * 56)
     p.rotation.y = Math.random() * Math.PI
     const s = 0.5 + Math.random() * 1.6
     p.scale.set(s, 0.4 + Math.random(), s)
@@ -865,11 +871,12 @@ export function buildMap(scene: THREE.Scene): MapData {
   const clouds = new THREE.Group()
   clouds.name = 'clouds'
   const cloudTex = canvasTex(256, drawCloud)
-  for (let i = 0; i < 8; i++) {
+  const cloudN = detailed ? 8 : 4
+  for (let i = 0; i < cloudN; i++) {
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({
       map: cloudTex, transparent: true, opacity: 0.75, depthWrite: false, fog: false,
     }))
-    const a = (i / 8) * Math.PI * 2
+    const a = (i / cloudN) * Math.PI * 2
     const r = 42 + Math.random() * 26
     sp.position.set(Math.cos(a) * r, 21 + Math.random() * 10, Math.sin(a) * r)
     const sc = 16 + Math.random() * 14
@@ -879,27 +886,43 @@ export function buildMap(scene: THREE.Scene): MapData {
   scene.add(clouds)
 
   // пылинки
+  const dustN = detailed ? 240 : 110
   const dustGeo = new THREE.BufferGeometry()
-  const dustPos = new Float32Array(220 * 3)
-  for (let i = 0; i < 220; i++) {
-    dustPos[i * 3] = (Math.random() - 0.5) * 38
+  const dustPos = new Float32Array(dustN * 3)
+  for (let i = 0; i < dustN; i++) {
+    dustPos[i * 3] = (Math.random() - 0.5) * 56
     dustPos[i * 3 + 1] = Math.random() * 6
-    dustPos[i * 3 + 2] = (Math.random() - 0.5) * 38
+    dustPos[i * 3 + 2] = (Math.random() - 0.5) * 56
   }
   dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3))
   const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0xfff0c8, size: 0.05, transparent: true, opacity: 0.5 }))
   dust.name = 'dust'
   scene.add(dust)
 
+  /* ---------- масштабирование мира ---------- */
+  scene.scale.setScalar(S)
+  sceneArg.add(scene)
+  // повторы мировых текстур, чтобы кирпич/доски остались человеческого размера
+  const worldTex = [groundTex, wallTexBig, wallTexSmall, stuccoTex, crateTex, contRustTex, contOliveTex, barrelTex, deckTex]
+  for (const t of worldTex) {
+    t.repeat.multiplyScalar(S)
+    if (!detailed) t.anisotropy = 2
+  }
+
+  const bounds: AABB = { minX: -19.4 * S, maxX: 19.4 * S, minZ: -19.4 * S, maxZ: 19.4 * S, top: 5 * S }
+  for (const c of colliders) {
+    c.minX *= S; c.maxX *= S; c.minZ *= S; c.maxZ *= S; c.top *= S
+  }
+
   return {
     solids,
     colliders,
-    bounds: { minX: -19.4, maxX: 19.4, minZ: -19.4, maxZ: 19.4, top: 5 },
+    bounds,
     botSpawns: [
       { x: -15, z: -15 }, { x: -6, z: -17 }, { x: 6, z: -17 }, { x: 15, z: -15 },
       { x: -17, z: -3 }, { x: 17, z: -3 }, { x: -10, z: -9 }, { x: 10, z: -9 },
       { x: -17, z: 12 }, { x: 17, z: -13 },
-    ],
-    playerSpawn: { x: 0, z: 16 },
+    ].map((p) => ({ x: p.x * S, z: p.z * S })),
+    playerSpawn: { x: 0, z: 16 * S },
   }
 }

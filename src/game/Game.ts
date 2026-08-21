@@ -37,12 +37,32 @@ export interface GameHooks {
 type State = 'attract' | 'playing' | 'roundEnd' | 'dying' | 'paused'
 
 const NAMES = ['Феникс', 'Гюрза', 'Кобра', 'Шакал', 'Коршун', 'Таран', 'Волк', 'Гадюка', 'Беркут', 'Росомаха']
-const ROUND_TIME = 100
+const ROUND_TIME = 115
 const WINS_NEEDED = 3
 
 export const IS_TOUCH =
   typeof window !== 'undefined' &&
   (window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window)
+
+/* детект старых/слабых GPU (Intel HD Graphics 2000–6000, софтверные растеризаторы) */
+function detectWeakGPU(): boolean {
+  try {
+    const cv = document.createElement('canvas')
+    const gl = (cv.getContext('webgl') || cv.getContext('experimental-webgl')) as WebGLRenderingContext | null
+    if (!gl) return true
+    const ext = gl.getExtension('WEBGL_debug_renderer_info')
+    if (!ext) return false
+    const r = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)).toLowerCase()
+    const v = String(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL)).toLowerCase()
+    const s = r + ' ' + v
+    if (/swiftshader|llvmpipe|mesa/.test(s)) return true
+    return /intel/.test(s) && /hd graphics/.test(s) && !/uhd|iris/.test(s)
+  } catch {
+    return false
+  }
+}
+export const LOW_GPU = detectWeakGPU()
+export const PERF_LOW = IS_TOUCH || LOW_GPU
 
 export type WeaponId = 'ak' | 'awp' | 'deagle' | 'p90' | 'uzi' | 'knife'
 
@@ -229,6 +249,11 @@ export class Game {
   private shells: { m: THREE.Mesh; v: THREE.Vector3; rv: THREE.Vector3; life: number }[] = []
   private decals: { m: THREE.Mesh; life: number }[] = []
   private composer: EffectComposer
+  private bloomPass: UnrealBloomPass | null = null
+  // адаптивное качество: если FPS низкий — дополнительно упрощаем рендер
+  private perfFrames = 0
+  private perfAcc = 0
+  private degraded = false
 
   // fx objects
   private weapon = new THREE.Group()
@@ -252,44 +277,46 @@ export class Game {
     this.container = container
     this.hooks = hooks
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: !IS_TOUCH, powerPreference: 'high-performance' })
-    // на телефонах снижаем плотность пикселей ради стабильного FPS
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.3 : 1.75))
+    this.renderer = new THREE.WebGLRenderer({ antialias: !PERF_LOW, powerPreference: 'high-performance' })
+    // на слабых GPU (Intel HD 4000 и т.п.) и телефонах снижаем плотность пикселей
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, PERF_LOW ? 1 : 1.75))
     this.renderer.setSize(container.clientWidth, container.clientHeight)
     this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    this.renderer.shadowMap.type = PERF_LOW ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
     container.appendChild(this.renderer.domElement)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.06
 
     // градиентное небо: тёплый горизонт Dust II -> холодный зенит
     this.scene.background = this.makeSkyTexture()
-    this.scene.fog = new THREE.Fog(0xc8bfa8, 36, 98)
+    this.scene.fog = new THREE.Fog(0xc8bfa8, PERF_LOW ? 34 : 48, PERF_LOW ? 105 : 155)
 
-    this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.05, 220)
+    this.camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.05, 320)
     this.camera.rotation.order = 'YXZ'
     this.scene.add(this.camera)
 
     const hemi = new THREE.HemisphereLight(0xcfe2f5, 0x9b8a63, 1.1)
     this.scene.add(hemi)
     const sun = new THREE.DirectionalLight(0xffeccc, 2.6)
-    sun.position.set(-26, 38, -18)
+    sun.position.set(-39, 57, -27)
     sun.castShadow = true
-    sun.shadow.mapSize.set(IS_TOUCH ? 1024 : 2048, IS_TOUCH ? 1024 : 2048)
-    sun.shadow.camera.left = -34
-    sun.shadow.camera.right = 34
-    sun.shadow.camera.top = 34
-    sun.shadow.camera.bottom = -34
-    sun.shadow.camera.far = 100
+    sun.shadow.mapSize.set(PERF_LOW ? 1024 : 2048, PERF_LOW ? 1024 : 2048)
+    sun.shadow.camera.left = -52
+    sun.shadow.camera.right = 52
+    sun.shadow.camera.top = 52
+    sun.shadow.camera.bottom = -52
+    sun.shadow.camera.far = 200
     sun.shadow.bias = -0.0006
     this.scene.add(sun)
     this.scene.add(new THREE.AmbientLight(0x8899aa, 0.4))
-    // тёплый свет, отражённый от песка (заполняет тени)
-    const sandBounce = new THREE.DirectionalLight(0xd9b98a, 0.5)
-    sandBounce.position.set(20, 6, 24)
-    this.scene.add(sandBounce)
+    // тёплый свет, отражённый от песка (заполняет тени) — отключаем на слабых GPU
+    if (!PERF_LOW) {
+      const sandBounce = new THREE.DirectionalLight(0xd9b98a, 0.5)
+      sandBounce.position.set(30, 9, 36)
+      this.scene.add(sandBounce)
+    }
 
-    this.map = buildMap(this.scene)
+    this.map = buildMap(this.scene, !PERF_LOW)
 
     // weapon lights
     this.gunLight = new THREE.PointLight(0xffc36b, 0, 9, 2)
@@ -310,7 +337,7 @@ export class Game {
     this.weaponMuzzles[this.equipped].add(this.flash)
 
     // pools (на телефонах — меньше объектов)
-    for (let i = 0; i < (IS_TOUCH ? 12 : 24); i++) {
+    for (let i = 0; i < (PERF_LOW ? 10 : 24); i++) {
       const m = new THREE.Mesh(
         new THREE.BoxGeometry(1, 1, 1),
         new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })
@@ -323,7 +350,7 @@ export class Game {
     // гильзы
     const shellGeo = new THREE.BoxGeometry(0.016, 0.05, 0.016)
     const shellMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, metalness: 0.85, roughness: 0.35 })
-    for (let i = 0; i < (IS_TOUCH ? 10 : 22); i++) {
+    for (let i = 0; i < (PERF_LOW ? 8 : 22); i++) {
       const m = new THREE.Mesh(shellGeo, shellMat)
       m.visible = false
       this.scene.add(m)
@@ -331,7 +358,7 @@ export class Game {
     }
     // декали попаданий
     const decalGeo = new THREE.PlaneGeometry(0.1, 0.1)
-    for (let i = 0; i < (IS_TOUCH ? 16 : 40); i++) {
+    for (let i = 0; i < (PERF_LOW ? 14 : 40); i++) {
       const m = new THREE.Mesh(decalGeo, new THREE.MeshBasicMaterial({ color: 0x14100a, transparent: true, opacity: 0, depthWrite: false }))
       m.visible = false
       this.scene.add(m)
@@ -341,9 +368,10 @@ export class Game {
     // постобработка: bloom + тонмаппинг
     this.composer = new EffectComposer(this.renderer)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
-    // bloom — дорогая операция, на телефонах отключаем для плавности
-    if (!IS_TOUCH) {
-      this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.5, 0.5, 0.82))
+    // bloom — дорогая операция, на слабых GPU и телефонах отключаем
+    if (!PERF_LOW) {
+      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.5, 0.5, 0.82)
+      this.composer.addPass(this.bloomPass)
     }
     this.composer.addPass(new OutputPass())
 
@@ -971,7 +999,7 @@ export class Game {
     this.hooks.scoped(false)
     this.roundT = ROUND_TIME
 
-    const count = Math.min(8, 2 + this.round)
+    const count = Math.min(10, 3 + this.round)
     const spawns = [...this.map.botSpawns].sort(() => Math.random() - 0.5)
     const botHooks: BotHooks = {
       colliders: this.map.colliders,
@@ -985,7 +1013,7 @@ export class Game {
     }
     for (let i = 0; i < count; i++) {
       const s = spawns[i % spawns.length]
-      const bot = new Bot(NAMES[i % NAMES.length], s.x + (Math.random() - 0.5), s.z + (Math.random() - 0.5), 3 + this.round * 0.22 + Math.random() * 0.3, botHooks)
+      const bot = new Bot(NAMES[i % NAMES.length], s.x + (Math.random() - 0.5), s.z + (Math.random() - 0.5), (3 + this.round * 0.22 + Math.random() * 0.3) * 1.35, botHooks)
       bot.group.rotation.y = Math.random() * Math.PI * 2
       this.scene.add(bot.group)
       bot.group.updateMatrixWorld(true)
@@ -1051,8 +1079,8 @@ export class Game {
     const a = this.ammo[this.equipped]
     if (this.reloading || a.mag >= cfg.mag || this.state !== 'playing') return
     if (a.res <= 0) {
-      a.res = cfg.mag
-      this.hooks.feed({ killer: 'Снабжение', victim: `+${cfg.mag} патронов`, head: false, byPlayer: true })
+      this.sfx.dry() // как в CS:GO — щелчок, патронов нет
+      return
     }
     if (this.scoped) this.toggleScope(false)
     this.reloading = true
@@ -1398,7 +1426,7 @@ export class Game {
     for (let i = 0; i < count; i++) {
       let p = this.particles.find((q) => q.life <= 0)
       if (!p) {
-        if (this.particles.length > (IS_TOUCH ? 120 : 280)) return
+        if (this.particles.length > (PERF_LOW ? 90 : 280)) return
         const m = new THREE.Mesh(
           new THREE.BoxGeometry(0.06, 0.06, 0.06),
           new THREE.MeshBasicMaterial({ color, transparent: true })
@@ -1515,6 +1543,18 @@ export class Game {
     this.raf = requestAnimationFrame(this.loop)
     const dt = Math.min(0.05, this.clock.getDelta())
     this.time += dt
+
+    // замеры первые ~3 секунды боя: если FPS < 25 — дополнительно упрощаем
+    if (!this.degraded && this.state !== 'attract' && this.perfFrames < 180) {
+      this.perfAcc += dt
+      this.perfFrames++
+      if (this.perfFrames === 180 && this.perfAcc / 180 > 0.04) {
+        this.degraded = true
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, PERF_LOW ? 0.66 : 1.1))
+        this.composer.setSize(this.container.clientWidth, this.container.clientHeight)
+        if (this.bloomPass) this.bloomPass.enabled = false
+      }
+    }
 
     const dust = this.scene.getObjectByName('dust')
     if (dust) dust.rotation.y += dt * 0.012

@@ -67,7 +67,7 @@ export class Bot {
   private flashT = 0
   private deathT = 0
   private phase = Math.random() * 10
-  private prefRange = 6.5 + Math.random() * 6.5
+  private prefRange = 9 + Math.random() * 9
   private ray = new THREE.Raycaster()
   private tmpA = new THREE.Vector3()
   private tmpB = new THREE.Vector3()
@@ -358,14 +358,14 @@ export class Bot {
     if (this.burstLeft > 0) {
       this.nextShot -= dt
       if (this.nextShot <= 0) {
-        if (los && dist < 36) this.fireAt(eye, dist)
+        if (los && dist < 52) this.fireAt(eye, dist)
         this.burstLeft--
         this.nextShot = 0.13
         if (this.burstLeft === 0) this.nextBurst = Math.max(0.4, 1.1 + Math.random() * 1.2 - dist * 0.012)
       }
     } else {
       this.nextBurst -= dt
-      if (this.nextBurst <= 0 && los && dist < 36) {
+      if (this.nextBurst <= 0 && los && dist < 52) {
         this.burstLeft = 2 + ((Math.random() * 3) | 0)
         this.nextShot = 0.06
       }
