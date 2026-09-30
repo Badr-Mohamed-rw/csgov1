@@ -41,18 +41,27 @@ function speckle(g: CanvasRenderingContext2D, s: number, n: number, colors: stri
 /* ======================= ТЕКСТУРЫ ======================= */
 
 function drawGround(g: CanvasRenderingContext2D, s: number) {
-  g.fillStyle = '#c2a878'
+  // Базовый градиент песка
+  const grad = g.createLinearGradient(0, 0, s, s)
+  grad.addColorStop(0, '#c2a878')
+  grad.addColorStop(0.5, '#b89e70')
+  grad.addColorStop(1, '#c8ac7c')
+  g.fillStyle = grad
   g.fillRect(0, 0, s, s)
-  // уплотнённые пятна грунта
-  g.globalAlpha = 0.16
-  for (let i = 0; i < 22; i++) {
-    g.fillStyle = i % 2 ? '#8f7448' : '#dcc596'
+  
+  // Уплотнённые пятна грунта - больше вариаций
+  g.globalAlpha = 0.18
+  for (let i = 0; i < 35; i++) {
+    const colors = ['#8f7448', '#dcc596', '#a08960', '#d4b88a', '#96805a']
+    g.fillStyle = colors[i % colors.length]
     g.beginPath()
-    g.ellipse(Math.random() * s, Math.random() * s, 16 + Math.random() * 46, 10 + Math.random() * 30, Math.random() * 3, 0, 7)
+    g.ellipse(Math.random() * s, Math.random() * s, 16 + Math.random() * 56, 10 + Math.random() * 40, Math.random() * 3, 0, 7)
     g.fill()
   }
   g.globalAlpha = 1
-  speckle(g, s, 3400, ['#b09463', '#d4bc8c', '#a8895a', '#cbb283', '#9b7f50'], 0.5)
+  
+  // Мелкие камешки и детали
+  speckle(g, s, 4500, ['#b09463', '#d4bc8c', '#a8895a', '#cbb283', '#9b7f50', '#8a7550'], 0.5)
   // трещины
   g.globalAlpha = 0.22
   g.strokeStyle = '#7d6238'
@@ -105,24 +114,49 @@ function drawGround(g: CanvasRenderingContext2D, s: number) {
 }
 
 function drawBricks(g: CanvasRenderingContext2D, s: number, stained: boolean) {
-  g.fillStyle = '#c9b183'
+  // Базовый цвет с вариациями
+  const baseGrad = g.createLinearGradient(0, 0, 0, s)
+  baseGrad.addColorStop(0, '#c9b183')
+  baseGrad.addColorStop(0.5, '#c4ac7e')
+  baseGrad.addColorStop(1, '#ceb385')
+  g.fillStyle = baseGrad
   g.fillRect(0, 0, s, s)
+  
   const bh = 32
   const bw = 64
+  
+  // Кирпичи с улучшенными тенями и вариациями
   for (let row = 0; row < s / bh; row++) {
     const shift = row % 2 ? bw / 2 : 0
     for (let col = -1; col < s / bw + 1; col++) {
       const x = col * bw + shift
       const y = row * bh
-      const tone = 0.9 + Math.random() * 0.2
-      g.fillStyle = `rgb(${(201 * tone) | 0},${(177 * tone) | 0},${(131 * tone) | 0})`
+      
+      // Вариация цвета для каждого кирпича
+      const tone = 0.85 + Math.random() * 0.25
+      const r = Math.floor(201 * tone)
+      const gr = Math.floor(177 * tone)
+      const b = Math.floor(131 * tone)
+      
+      // Тень кирпича
+      g.fillStyle = `rgba(0,0,0,0.15)`
+      g.fillRect(x + 3, y + 3, bw - 4, bh - 4)
+      
+      // Сам кирпич
+      g.fillStyle = `rgb(${r},${gr},${b})`
       g.fillRect(x + 2, y + 2, bw - 4, bh - 4)
-      speckle(g, s, 24, ['#b39a6c', '#d8c39a', '#a58c5e'], 0.32)
-      g.globalAlpha = 0.25
+      
+      // Текстура кирпича
+      speckle(g, s, 28, ['#b39a6c', '#d8c39a', '#a58c5e', '#bfa575'], 0.35)
+      
+      // Шов снизу
+      g.globalAlpha = 0.3
       g.fillStyle = '#8f7a52'
       g.fillRect(x + 2, y + bh - 5, bw - 4, 3)
       g.globalAlpha = 1
     }
+    
+    // Горизонтальный шов
     g.fillStyle = '#a08a5f'
     g.fillRect(0, row * bh, s, 2)
   }
@@ -842,7 +876,7 @@ export function buildMap(sceneArg: THREE.Scene, detailed = true): MapData {
     scene.add(m)
   }
 
-  /* ---------- камни ---------- */
+  /* ---------- камни и мелкий мусор ---------- */
   const pebGeo = new THREE.BoxGeometry(0.09, 0.05, 0.09)
   const pebMat = new THREE.MeshStandardMaterial({ color: 0x9b8a63, roughness: 1 })
   for (let i = 0; i < (detailed ? 170 : 70); i++) {
@@ -854,6 +888,20 @@ export function buildMap(sceneArg: THREE.Scene, detailed = true): MapData {
     p.receiveShadow = true
     scene.add(p)
   }
+  
+  /* ---------- дополнительные бочки ---------- */
+  const barrelPositions = [
+    [-8, 4], [12, -6], [-14, 8], [6, 12], [-4, -10]
+  ]
+  for (const [x, z] of barrelPositions) {
+    barrel(x, z)
+  }
+  
+  /* ---------- дополнительные ящики ---------- */
+  crate(-10, 6)
+  crate(8, -12)
+  crate(15, 2)
+  crate(-6, -8, 2)
 
   /* ---------- солнце + облака ---------- */
   const sun = new THREE.Mesh(new THREE.CircleGeometry(6, 24), new THREE.MeshBasicMaterial({ color: 0xfff3d0, fog: false }))

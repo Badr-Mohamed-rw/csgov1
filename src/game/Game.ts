@@ -215,6 +215,7 @@ export class Game {
   private reloading = false
   private reloadT = 0
   private reloadTotal = 1.9
+  private reloadAnim = 0 // 0..1 анимация перезарядки
   private cooldown = 0
   private firing = false
 
@@ -380,9 +381,37 @@ export class Game {
     this.composer = new EffectComposer(this.renderer)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
     // bloom — дорогая операция, на слабых GPU и телефонах отключён по умолчанию
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.5, 0.5, 0.82)
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.6, 0.4, 0.85)
     this.bloomPass.enabled = !PERF_LOW
     this.composer.addPass(this.bloomPass)
+    
+    // Vignette эффект
+    const vignetteShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        darkness: { value: 1.2 },
+        offset: { value: 1.0 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float darkness;
+        uniform float offset;
+        varying vec2 vUv;
+        void main() {
+          vec4 texel = texture2D(tDiffuse, vUv);
+          vec2 uv = (vUv - vec2(0.5)) * vec2(offset);
+          gl_FragColor = vec4(mix(texel.rgb, vec3(0.0), dot(uv, uv) * darkness), texel.a);
+        }
+      `
+    }
+    
     this.composer.addPass(new OutputPass())
 
     this.pos.set(this.map.playerSpawn.x, 0, this.map.playerSpawn.z)
@@ -499,16 +528,47 @@ export class Game {
     const muzzle = new THREE.Object3D()
     const css = (c: number) => `#${c.toString(16).padStart(6, '0')}`
 
-    // материалы с текстурами + bump-рельефом
+    // Улучшенные материалы с bump-рельефом
     const metalTex = this.texMetal(css(spec.bodyMat === 'metal' ? spec.bodyColor : 0x2b2e33))
     const woodTex = this.texWood()
     const polyTex = this.texPolymer(css(spec.bodyColor))
-    const matMetal = new THREE.MeshStandardMaterial({ map: metalTex, bumpMap: metalTex, bumpScale: 0.25, roughness: 0.46, metalness: 0.72 })
-    const matDark = new THREE.MeshStandardMaterial({ map: this.texMetal('#17191c'), bumpMap: this.texMetal('#17191c'), bumpScale: 0.2, roughness: 0.4, metalness: 0.8 })
-    const matWood = new THREE.MeshStandardMaterial({ map: woodTex, bumpMap: woodTex, bumpScale: 0.45, roughness: 0.66, metalness: 0.06 })
-    const matPoly = new THREE.MeshStandardMaterial({ map: polyTex, bumpMap: polyTex, bumpScale: 0.3, roughness: 0.85, metalness: 0.1 })
+    
+    const matMetal = new THREE.MeshStandardMaterial({ 
+      map: metalTex, 
+      bumpMap: metalTex, 
+      bumpScale: 0.3, 
+      roughness: 0.42, 
+      metalness: 0.78 
+    })
+    const matDark = new THREE.MeshStandardMaterial({ 
+      map: this.texMetal('#17191c'), 
+      bumpMap: this.texMetal('#17191c'), 
+      bumpScale: 0.25, 
+      roughness: 0.38, 
+      metalness: 0.85 
+    })
+    const matWood = new THREE.MeshStandardMaterial({ 
+      map: woodTex, 
+      bumpMap: woodTex, 
+      bumpScale: 0.5, 
+      roughness: 0.68, 
+      metalness: 0.05 
+    })
+    const matPoly = new THREE.MeshStandardMaterial({ 
+      map: polyTex, 
+      bumpMap: polyTex, 
+      bumpScale: 0.35, 
+      roughness: 0.82, 
+      metalness: 0.08 
+    })
     const gloveTex = this.texPolymer('#6e6848')
-    const matGlove = new THREE.MeshStandardMaterial({ map: gloveTex, bumpMap: gloveTex, bumpScale: 0.5, roughness: 0.92, metalness: 0.04 })
+    const matGlove = new THREE.MeshStandardMaterial({ 
+      map: gloveTex, 
+      bumpMap: gloveTex, 
+      bumpScale: 0.55, 
+      roughness: 0.9, 
+      metalness: 0.03 
+    })
     const matBody = spec.bodyMat === 'wood' ? matWood : spec.bodyMat === 'poly' ? matPoly : matMetal
     const matBlade = new THREE.MeshStandardMaterial({ color: 0xd9dee3, roughness: 0.22, metalness: 0.95 })
 
@@ -733,7 +793,7 @@ export class Game {
   private buildWeapons() {
     const root = this.weapon
     for (const id of WEAPON_ORDER) {
-      const { group, muzzle } = this.buildGunModel(WEAPONS[id].gun)
+      const { group, muzzle } = id === 'ak' ? this.buildAK47() : this.buildGunModel(WEAPONS[id].gun)
       this.weaponModels[id] = group
       this.weaponMuzzles[id] = muzzle
       root.add(group)
@@ -741,6 +801,101 @@ export class Game {
     }
     root.position.set(0.24, -0.22, -0.45)
     this.camera.add(root)
+  }
+
+  private buildAK47() {
+    const g = new THREE.Group()
+    const muzzle = new THREE.Object3D()
+    
+    // Текстуры
+    const metalTex = this.texMetal('#3a3d42')
+    const woodTex = this.texWood()
+    const matMetal = new THREE.MeshStandardMaterial({ map: metalTex, bumpMap: metalTex, bumpScale: 0.3, roughness: 0.45, metalness: 0.75 })
+    const matDark = new THREE.MeshStandardMaterial({ map: this.texMetal('#1a1c20'), roughness: 0.4, metalness: 0.8 })
+    const matWood = new THREE.MeshStandardMaterial({ map: woodTex, bumpMap: woodTex, bumpScale: 0.5, roughness: 0.7, metalness: 0.05 })
+    const matGlove = new THREE.MeshStandardMaterial({ color: 0x2a2d24, roughness: 0.9 })
+
+    const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
+      mesh.position.set(x, y, z)
+      mesh.rotation.set(rx, ry, rz)
+      g.add(mesh)
+      return mesh
+    }
+    const cyl = (r1: number, r2: number, len: number, m: THREE.Material, x: number, y: number, z: number) => {
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 16), m)
+      mesh.rotation.x = Math.PI / 2
+      mesh.position.set(x, y, z)
+      g.add(mesh)
+      return mesh
+    }
+
+    // Ствольная коробка (receiver)
+    box(0.075, 0.095, 0.5, matMetal, 0, 0, -0.04)
+    
+    // Ствол с газоотводной трубкой
+    cyl(0.016, 0.016, 0.36, matDark, 0, 0.022, -0.46)
+    cyl(0.011, 0.011, 0.28, matMetal, 0, 0.045, -0.42) // газоотвод
+    
+    // Цевьё (handguard) - деревянное с вентиляционными отверстиями
+    box(0.068, 0.072, 0.24, matWood, 0, -0.004, -0.28)
+    for (let i = 0; i < 4; i++) {
+      box(0.062, 0.015, 0.008, matDark, 0, -0.004, -0.2 - i * 0.05)
+    }
+    
+    // Магазин (magazine) - изогнутый
+    const magGroup = new THREE.Group()
+    magGroup.position.set(0, -0.16, 0.03)
+    magGroup.rotation.x = 0.22
+    box(0.058, 0.2, 0.1, matMetal, 0, 0, 0)
+    // Рёбра жёсткости на магазине
+    for (let i = 0; i < 3; i++) {
+      box(0.06, 0.008, 0.102, matDark, 0, -0.06 + i * 0.06, 0)
+    }
+    g.add(magGroup)
+    
+    // Приклад (stock) - деревянный
+    box(0.06, 0.085, 0.24, matWood, 0, -0.012, 0.3)
+    box(0.055, 0.075, 0.02, matDark, 0, -0.012, 0.42) // затыльник
+    
+    // Рукоять (grip)
+    box(0.05, 0.11, 0.055, matWood, 0, -0.1, 0.12, -0.25)
+    
+    // Прицельные приспособления
+    box(0.012, 0.05, 0.012, matDark, 0, 0.078, -0.6) // мушка
+    box(0.05, 0.03, 0.02, matDark, 0, 0.062, 0.1) // целик
+    
+    // Дульный компенсатор
+    cyl(0.02, 0.02, 0.06, matMetal, 0, 0.022, -0.66)
+    box(0.035, 0.008, 0.05, matDark, 0, 0.022, -0.66) // прорези
+    
+    // Затворная рама (bolt carrier)
+    box(0.07, 0.04, 0.15, matMetal, 0, 0.04, 0.05)
+    box(0.014, 0.045, 0.014, matMetal, 0.04, 0.045, 0.1) // рукоятка взведения
+    
+    // Руки
+    const fist = (x: number, y: number, z: number, rx = 0) => {
+      const hand = new THREE.Group()
+      const palm = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.075, 0.085), matGlove)
+      hand.add(palm)
+      const fingers = new THREE.Mesh(new THREE.BoxGeometry(0.084, 0.045, 0.06), matGlove)
+      fingers.position.set(0, -0.012, -0.06)
+      fingers.rotation.x = -0.4
+      hand.add(fingers)
+      const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.062, 0.26), matGlove)
+      forearm.position.set(0.05, -0.02, 0.26)
+      forearm.rotation.set(0.18, -0.15, 0)
+      hand.add(forearm)
+      hand.position.set(x, y, z)
+      hand.rotation.x = rx
+      g.add(hand)
+    }
+    fist(0, -0.004, -0.28, 0.2) // левая на цевье
+    fist(0, -0.1, 0.12, -0.25) // правая на рукояти
+
+    muzzle.position.set(0, 0.022, -0.69)
+    g.add(muzzle)
+    return { group: g, muzzle }
   }
 
   private makeGlowTex(): THREE.CanvasTexture {
@@ -1135,6 +1290,7 @@ export class Game {
     this.reloading = true
     this.reloadTotal = cfg.reload
     this.reloadT = cfg.reload
+    this.reloadAnim = 0 // начинаем анимацию
     this.sfx.reload()
   }
 
@@ -1723,8 +1879,30 @@ export class Game {
     w.position.x += (targetX - w.position.x) * Math.min(1, 12 * dt)
     w.position.y = -0.22 + Math.abs(Math.cos(this.bobT)) * 0.008 * Math.min(1, hSpeed / 5) - dip
     w.position.z = -0.45 + this.kick * 0.055
+    
+    // Анимация перезарядки - реалистичная с опусканием оружия
     let rotX = this.kick * 0.1
-    if (this.reloading) rotX -= Math.sin(Math.min(1, 1 - this.reloadT / this.reloadTotal) * Math.PI) * 0.85
+    if (this.reloading) {
+      const reloadProgress = 1 - this.reloadT / this.reloadTotal
+      // Фаза 1 (0-0.3): наклон оружия вниз
+      // Фаза 2 (0.3-0.7): извлечение/вставка магазина
+      // Фаза 3 (0.7-1.0): возврат в позицию
+      if (reloadProgress < 0.3) {
+        const t = reloadProgress / 0.3
+        rotX -= Math.sin(t * Math.PI / 2) * 0.9
+        w.position.y -= Math.sin(t * Math.PI / 2) * 0.08
+      } else if (reloadProgress < 0.7) {
+        rotX -= 0.9
+        w.position.y -= 0.08
+        // Покачивание при вставке магазина
+        const t = (reloadProgress - 0.3) / 0.4
+        w.position.y += Math.sin(t * Math.PI * 2) * 0.01
+      } else {
+        const t = (reloadProgress - 0.7) / 0.3
+        rotX -= (1 - t) * 0.9
+        w.position.y -= (1 - t) * 0.08
+      }
+    }
     if (this.switchAnim < 1) rotX -= Math.sin(this.switchAnim * Math.PI) * 0.5
     w.rotation.x = rotX
     w.rotation.z = this.kick * 0.02
@@ -1739,8 +1917,10 @@ export class Game {
     this.switchAnim = Math.min(1, this.switchAnim + dt / 0.28)
     if (this.reloading) {
       this.reloadT -= dt
+      this.reloadAnim = 1 - this.reloadT / this.reloadTotal // прогресс анимации 0..1
       if (this.reloadT <= 0) {
         this.reloading = false
+        this.reloadAnim = 0
         const a = this.ammo[this.equipped]
         const take = Math.min(cfg.mag - a.mag, a.res)
         a.mag += take

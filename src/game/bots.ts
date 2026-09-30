@@ -13,25 +13,44 @@ export interface BotHooks {
   sfx: SFX
 }
 
-/* процедурный камуфляж для формы */
+/* процедурный камуфляж для формы - улучшенный */
 function camoTexture(base: string, spots: string[]): THREE.CanvasTexture {
   const cv = document.createElement('canvas')
-  cv.width = cv.height = 128
+  cv.width = cv.height = 256 // увеличено для детализации
   const g = cv.getContext('2d')!
-  g.fillStyle = base
-  g.fillRect(0, 0, 128, 128)
-  for (let i = 0; i < 46; i++) {
+  
+  // Базовый цвет с градиентом
+  const grad = g.createLinearGradient(0, 0, 256, 256)
+  grad.addColorStop(0, base)
+  grad.addColorStop(1, spots[0])
+  g.fillStyle = grad
+  g.fillRect(0, 0, 256, 256)
+  
+  // Камуфляжные пятна разных размеров
+  for (let i = 0; i < 80; i++) {
     g.fillStyle = spots[(Math.random() * spots.length) | 0]
-    g.globalAlpha = 0.5 + Math.random() * 0.4
+    g.globalAlpha = 0.4 + Math.random() * 0.5
     g.beginPath()
-    g.ellipse(Math.random() * 128, Math.random() * 128, 6 + Math.random() * 16, 4 + Math.random() * 10, Math.random() * 3, 0, 7)
+    const size = 8 + Math.random() * 24
+    g.ellipse(Math.random() * 256, Math.random() * 256, size, size * 0.7, Math.random() * Math.PI, 0, 7)
     g.fill()
   }
-  g.globalAlpha = 0.16
-  for (let i = 0; i < 300; i++) {
+  
+  // Мелкие детали - грязь и потёртости
+  g.globalAlpha = 0.2
+  for (let i = 0; i < 500; i++) {
     g.fillStyle = Math.random() > 0.5 ? '#000000' : '#ffffff'
-    g.fillRect(Math.random() * 128, Math.random() * 128, 1.4, 1.4)
+    g.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2, 1 + Math.random() * 2)
   }
+  
+  // Вертикальные потёртости
+  g.globalAlpha = 0.15
+  for (let i = 0; i < 15; i++) {
+    g.fillStyle = '#000000'
+    const x = Math.random() * 256
+    g.fillRect(x, 0, 2 + Math.random() * 4, 256)
+  }
+  
   g.globalAlpha = 1
   const t = new THREE.CanvasTexture(cv)
   t.wrapS = t.wrapT = THREE.RepeatWrapping
@@ -80,25 +99,34 @@ export class Bot {
     this.lastX = x
     this.lastZ = z
 
-    const camo = camoTexture('#6d6b4f', ['#4c4a35', '#7d7a58', '#3a3a2a', '#8a8462'])
-    const camoDark = camoTexture('#4a4a3a', ['#33332a', '#5c5a44', '#282820'])
-    const mat = (c: number, map?: THREE.Texture) => {
-      const m = new THREE.MeshStandardMaterial({ color: map ? 0xffffff : c, map, roughness: 0.92 })
+    // Улучшенные камуфляжные текстуры
+    const camo = camoTexture('#6d6b4f', ['#4c4a35', '#7d7a58', '#3a3a2a', '#8a8462', '#5a5840'])
+    const camoDark = camoTexture('#4a4a3a', ['#33332a', '#5c5a44', '#282820', '#3f3f30'])
+    
+    const mat = (c: number, map?: THREE.Texture, rough = 0.92) => {
+      const m = new THREE.MeshStandardMaterial({ 
+        color: map ? 0xffffff : c, 
+        map, 
+        roughness: rough,
+        metalness: 0.05
+      })
       m.emissive = new THREE.Color(0xff2a00)
       m.emissiveIntensity = 0
       this.mats.push(m)
       return m
     }
-    const mUniform = mat(0xffffff, camo)
-    const mPants = mat(0xffffff, camoDark)
-    const mSkin = mat(0xc98e5f)
-    const mVest = mat(0x2e3226)
-    const mStrap = mat(0x22251c)
-    const mBoot = mat(0x23201b)
-    const mHelmet = mat(0xffffff, camoDark)
-    const mGlove = mat(0x2a2d24)
-    const mGun = new THREE.MeshStandardMaterial({ color: 0x2b2e33, roughness: 0.55, metalness: 0.55 })
-    const mWood = new THREE.MeshStandardMaterial({ color: 0x7c4a24, roughness: 0.75 })
+    
+    // Материалы с улучшенными параметрами
+    const mUniform = mat(0xffffff, camo, 0.88)
+    const mPants = mat(0xffffff, camoDark, 0.9)
+    const mSkin = mat(0xc98e5f, undefined, 0.75)
+    const mVest = mat(0x2e3226, undefined, 0.85)
+    const mStrap = mat(0x22251c, undefined, 0.8)
+    const mBoot = mat(0x23201b, undefined, 0.85)
+    const mHelmet = mat(0xffffff, camoDark, 0.7)
+    const mGlove = mat(0x2a2d24, undefined, 0.88)
+    const mGun = new THREE.MeshStandardMaterial({ color: 0x2b2e33, roughness: 0.5, metalness: 0.6 })
+    const mWood = new THREE.MeshStandardMaterial({ color: 0x7c4a24, roughness: 0.7, metalness: 0.05 })
 
     const box = (w: number, h: number, d: number, m: THREE.Material) =>
       new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)

@@ -94,9 +94,9 @@ function TouchControls({ game, activeWeapon, onSelectWeapon, onPause, ts, compac
   const layerRef = useRef<HTMLDivElement>(null)
   const baseRef = useRef<HTMLDivElement>(null)
   const knobRef = useRef<HTMLDivElement>(null)
-  // радиус джойстика не может быть слишком маленьким даже на узких экранах
-  const R = Math.round(54 * Math.max(ts, 0.72))
-  const KR = Math.round(R * 0.94)
+  // радиус джойстика - адаптивный под размер экрана
+  const R = Math.round(Math.min(60, Math.max(40, window.innerWidth * 0.08)) * Math.max(ts, 0.7))
+  const KR = Math.round(R * 0.85)
   const pts = useRef<Record<number, { role: 'move' | 'look'; ox: number; oy: number; lx: number; ly: number }>>({})
 
   const hideJoy = () => {
@@ -125,11 +125,31 @@ function TouchControls({ game, activeWeapon, onSelectWeapon, onPause, ts, compac
       let dx = e.clientX - p.ox
       let dy = e.clientY - p.oy
       const len = Math.hypot(dx, dy)
-      if (len > R) { dx = (dx / len) * R; dy = (dy / len) * R }
-      if (knobRef.current) knobRef.current.style.transform = `translate(${dx}px,${dy}px)`
+      
+      // Мёртвая зона в центре для более точного контроля
+      const deadZone = R * 0.15
+      if (len < deadZone) {
+        dx = 0
+        dy = 0
+      } else {
+        // Нормализация с учётом мёртвой зоны
+        const normalizedLen = Math.min(len, R)
+        const scale = (normalizedLen - deadZone) / (R - deadZone)
+        dx = (dx / len) * R * scale
+        dy = (dy / len) * R * scale
+      }
+      
+      if (knobRef.current) {
+        knobRef.current.style.transform = `translate(${dx}px,${dy}px)`
+        // Визуальная обратная связь - изменение прозрачности
+        const intensity = Math.min(1, len / R)
+        knobRef.current.style.opacity = String(0.7 + intensity * 0.3)
+      }
       game()?.setMoveInput(dx / R, -dy / R)
     } else {
-      game()?.addLook(e.clientX - p.lx, e.clientY - p.ly)
+      // Улучшенная чувствительность обзора
+      const lookSens = 1.2
+      game()?.addLook((e.clientX - p.lx) * lookSens, (e.clientY - p.ly) * lookSens)
       p.lx = e.clientX
       p.ly = e.clientY
     }
@@ -767,30 +787,39 @@ export default function App() {
       {/* ============ MENU ============ */}
       {screen === 'menu' && (
         <div className="absolute inset-0 z-40">
-          <div className="menu-scan absolute inset-0" style={{ background: 'linear-gradient(100deg, rgba(10,14,19,.96) 0%, rgba(10,14,19,.92) 44%, rgba(10,14,19,.55) 72%, rgba(10,14,19,.25) 100%)' }} />
+          {/* Фон с градиентом */}
+          <div className="absolute inset-0" style={{ 
+            background: 'linear-gradient(135deg, rgba(10,14,19,.98) 0%, rgba(15,20,28,.95) 50%, rgba(10,14,19,.92) 100%)'
+          }} />
           <div className="smoke absolute inset-0" />
-          <div className="hazard hazard-anim absolute top-0 left-0 h-2 w-full opacity-80" />
-          <div className="hazard hazard-anim absolute bottom-0 left-0 h-2 w-full opacity-80" />
+          
+          {/* Декоративные линии */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#f2a33c] to-transparent opacity-60" />
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#f2a33c] to-transparent opacity-60" />
 
-          <div className="relative flex h-full flex-col justify-start gap-8 overflow-y-auto px-6 py-10 md:flex-row md:items-center md:justify-between md:overflow-visible md:px-16 md:py-0 lg:px-24">
-            {/* left: title */}
+          <div className="relative flex h-full flex-col justify-start gap-6 overflow-y-auto px-4 py-8 md:flex-row md:items-center md:justify-between md:overflow-visible md:px-12 lg:px-20">
+            {/* Левая часть: заголовок */}
             <div className="max-w-xl">
-              <div className="mb-4 flex items-center gap-3">
-                <span className="inline-block h-[3px] w-10 bg-[#f2a33c]" />
-                <span className="text-[11px] font-bold tracking-[0.4em] text-[#8b98a7]">БРАУЗЕРНЫЙ ШУТЕР · THREE.JS</span>
+              <div className="mb-3 flex items-center gap-3">
+                <div className="h-[2px] w-12 bg-gradient-to-r from-[#f2a33c] to-transparent" />
+                <span className="text-[10px] font-bold tracking-[0.5em] text-[#8b98a7] uppercase">Browser FPS</span>
               </div>
-              <div className="mb-3 inline-flex items-center gap-2 border border-[#2b3844] bg-[#12181f]/80 px-2.5 py-1 text-[10px] font-bold tracking-[0.2em]">
-                <span className={`inline-block h-1.5 w-1.5 rounded-full ${PERF_LOW ? 'bg-[#f2a33c]' : 'bg-[#7fd08a]'}`} />
+              
+              {/* Индикатор графики */}
+              <div className="mb-4 inline-flex items-center gap-2 rounded-sm border border-[#2b3844] bg-[#12181f]/90 px-3 py-1.5 text-[10px] font-bold tracking-[0.2em] backdrop-blur-sm">
+                <span className={`inline-block h-2 w-2 rounded-full ${PERF_LOW ? 'bg-[#f2a33c] animate-pulse' : 'bg-[#7fd08a]'}`} />
                 <span className={PERF_LOW ? 'text-[#f2a33c]' : 'text-[#7fd08a]'}>
-                  {PERF_LOW ? (LOW_GPU ? 'ЭКОНОМ-ГРАФИКА (слабый GPU)' : 'ЭКОНОМ-ГРАФИКА (сенсор)') : 'ПОЛНАЯ ГРАФИКА'}
+                  {PERF_LOW ? (LOW_GPU ? 'OPTIMIZED MODE' : 'MOBILE MODE') : 'FULL QUALITY'}
                 </span>
-                <span className="text-[#5f6d7d]">· авто-детект + адаптация под FPS</span>
               </div>
-              <h1 className="title-glow font-display text-[64px] leading-[0.9] md:text-[120px]">
-                CS<span className="text-[#f2a33c]">&nbsp;3D</span>
+              
+              <h1 className="title-glow font-display text-[56px] leading-[0.85] tracking-tight md:text-[110px] lg:text-[130px]">
+                <span className="text-[#eae6dc]">CS</span>
+                <span className="text-[#f2a33c]">&nbsp;3D</span>
               </h1>
-              <p className="mt-5 max-w-md text-[15px] leading-relaxed text-[#aab6c4]">
-                Зачистите точку. AK-47, гранаты и живые боты, которые стрейфят и дают очередь в ответ.
+              
+              <p className="mt-4 max-w-md text-[14px] leading-relaxed text-[#aab6c4] md:text-[15px]">
+                Зачистите точку на карте <span className="font-bold text-[#f2a33c]">Dust II</span>. Шесть стволов, гранаты и живые боты.
                 Возьмите <span className="font-bold text-[#eae6dc]">3 раунда</span> быстрее, чем вас застрелят.
               </p>
               <button
