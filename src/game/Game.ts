@@ -6,6 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { buildMap, collideMove, groundSupport, type MapData } from './map'
 import { BOT_NAMES, getLang, t } from './i18n'
 import { gameplayStart, gameplayStop } from './yandex'
+import { loadAK47Model, preloadAK47 } from './AK47Loader'
 import { Bot, type BotHooks } from './bots'
 import { SFX } from './audio'
 
@@ -273,7 +274,7 @@ export class Game {
   private weaponMuzzles: Record<WeaponId, THREE.Object3D> = {} as Record<WeaponId, THREE.Object3D>
   private wheelOpen = false
   private wheelIndex = 0
-  private flash: THREE.Mesh
+  private flash?: THREE.Mesh
   private flashT = 0
   private gunLight: THREE.PointLight
   private boomLight: THREE.PointLight
@@ -344,9 +345,12 @@ export class Game {
     this.boomFlash.scale.set(9, 9, 1)
     this.scene.add(this.boomFlash)
 
-    this.buildWeapons()
-    this.flash = this.buildFlash(0.55)
-    this.weaponMuzzles[this.equipped].add(this.flash)
+    // Асинхронная загрузка оружия
+    this.buildWeapons().then(() => {
+      this.flash = this.buildFlash(0.55)
+      this.weaponMuzzles[this.equipped].add(this.flash)
+      this.applyWeaponVisibility()
+    })
 
     // pools (на телефонах — меньше объектов)
     for (let i = 0; i < (PERF_LOW ? 10 : 24); i++) {
@@ -416,6 +420,10 @@ export class Game {
 
     this.pos.set(this.map.playerSpawn.x, 0, this.map.playerSpawn.z)
     this.bindEvents()
+    
+    // Предзагрузка модели AK-47
+    preloadAK47()
+    
     this.loop()
   }
 
@@ -790,112 +798,32 @@ export class Game {
     return { group: g, muzzle }
   }
 
-  private buildWeapons() {
+  private async buildWeapons() {
     const root = this.weapon
+    
+    // Загружаем AK-47 модель
+    const ak47Model = await loadAK47Model()
+    const muzzle = new THREE.Object3D()
+    muzzle.position.set(0, 0.022, -0.69)
+    ak47Model.add(muzzle)
+    
+    this.weaponModels['ak'] = ak47Model
+    this.weaponMuzzles['ak'] = muzzle
+    root.add(ak47Model)
+    ak47Model.visible = false
+    
+    // Остальное оружие строим процедурно
     for (const id of WEAPON_ORDER) {
-      const { group, muzzle } = id === 'ak' ? this.buildAK47() : this.buildGunModel(WEAPONS[id].gun)
+      if (id === 'ak') continue // уже загружено
+      const { group, muzzle } = this.buildGunModel(WEAPONS[id].gun)
       this.weaponModels[id] = group
       this.weaponMuzzles[id] = muzzle
       root.add(group)
       group.visible = false
     }
+    
     root.position.set(0.24, -0.22, -0.45)
     this.camera.add(root)
-  }
-
-  private buildAK47() {
-    const g = new THREE.Group()
-    const muzzle = new THREE.Object3D()
-    
-    // Текстуры
-    const metalTex = this.texMetal('#3a3d42')
-    const woodTex = this.texWood()
-    const matMetal = new THREE.MeshStandardMaterial({ map: metalTex, bumpMap: metalTex, bumpScale: 0.3, roughness: 0.45, metalness: 0.75 })
-    const matDark = new THREE.MeshStandardMaterial({ map: this.texMetal('#1a1c20'), roughness: 0.4, metalness: 0.8 })
-    const matWood = new THREE.MeshStandardMaterial({ map: woodTex, bumpMap: woodTex, bumpScale: 0.5, roughness: 0.7, metalness: 0.05 })
-    const matGlove = new THREE.MeshStandardMaterial({ color: 0x2a2d24, roughness: 0.9 })
-
-    const box = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)
-      mesh.position.set(x, y, z)
-      mesh.rotation.set(rx, ry, rz)
-      g.add(mesh)
-      return mesh
-    }
-    const cyl = (r1: number, r2: number, len: number, m: THREE.Material, x: number, y: number, z: number) => {
-      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 16), m)
-      mesh.rotation.x = Math.PI / 2
-      mesh.position.set(x, y, z)
-      g.add(mesh)
-      return mesh
-    }
-
-    // Ствольная коробка (receiver)
-    box(0.075, 0.095, 0.5, matMetal, 0, 0, -0.04)
-    
-    // Ствол с газоотводной трубкой
-    cyl(0.016, 0.016, 0.36, matDark, 0, 0.022, -0.46)
-    cyl(0.011, 0.011, 0.28, matMetal, 0, 0.045, -0.42) // газоотвод
-    
-    // Цевьё (handguard) - деревянное с вентиляционными отверстиями
-    box(0.068, 0.072, 0.24, matWood, 0, -0.004, -0.28)
-    for (let i = 0; i < 4; i++) {
-      box(0.062, 0.015, 0.008, matDark, 0, -0.004, -0.2 - i * 0.05)
-    }
-    
-    // Магазин (magazine) - изогнутый
-    const magGroup = new THREE.Group()
-    magGroup.position.set(0, -0.16, 0.03)
-    magGroup.rotation.x = 0.22
-    box(0.058, 0.2, 0.1, matMetal, 0, 0, 0)
-    // Рёбра жёсткости на магазине
-    for (let i = 0; i < 3; i++) {
-      box(0.06, 0.008, 0.102, matDark, 0, -0.06 + i * 0.06, 0)
-    }
-    g.add(magGroup)
-    
-    // Приклад (stock) - деревянный
-    box(0.06, 0.085, 0.24, matWood, 0, -0.012, 0.3)
-    box(0.055, 0.075, 0.02, matDark, 0, -0.012, 0.42) // затыльник
-    
-    // Рукоять (grip)
-    box(0.05, 0.11, 0.055, matWood, 0, -0.1, 0.12, -0.25)
-    
-    // Прицельные приспособления
-    box(0.012, 0.05, 0.012, matDark, 0, 0.078, -0.6) // мушка
-    box(0.05, 0.03, 0.02, matDark, 0, 0.062, 0.1) // целик
-    
-    // Дульный компенсатор
-    cyl(0.02, 0.02, 0.06, matMetal, 0, 0.022, -0.66)
-    box(0.035, 0.008, 0.05, matDark, 0, 0.022, -0.66) // прорези
-    
-    // Затворная рама (bolt carrier)
-    box(0.07, 0.04, 0.15, matMetal, 0, 0.04, 0.05)
-    box(0.014, 0.045, 0.014, matMetal, 0.04, 0.045, 0.1) // рукоятка взведения
-    
-    // Руки
-    const fist = (x: number, y: number, z: number, rx = 0) => {
-      const hand = new THREE.Group()
-      const palm = new THREE.Mesh(new THREE.BoxGeometry(0.082, 0.075, 0.085), matGlove)
-      hand.add(palm)
-      const fingers = new THREE.Mesh(new THREE.BoxGeometry(0.084, 0.045, 0.06), matGlove)
-      fingers.position.set(0, -0.012, -0.06)
-      fingers.rotation.x = -0.4
-      hand.add(fingers)
-      const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.062, 0.26), matGlove)
-      forearm.position.set(0.05, -0.02, 0.26)
-      forearm.rotation.set(0.18, -0.15, 0)
-      hand.add(forearm)
-      hand.position.set(x, y, z)
-      hand.rotation.x = rx
-      g.add(hand)
-    }
-    fist(0, -0.004, -0.28, 0.2) // левая на цевье
-    fist(0, -0.1, 0.12, -0.25) // правая на рукояти
-
-    muzzle.position.set(0, 0.022, -0.69)
-    g.add(muzzle)
-    return { group: g, muzzle }
   }
 
   private makeGlowTex(): THREE.CanvasTexture {
@@ -1315,9 +1243,11 @@ export class Game {
     // fx
     const big = cfg.sound === 'sniper'
     this.flashT = big ? 0.07 : 0.04
-    this.flash.rotation.z = Math.random() * Math.PI
-    const fs = (big ? 1.2 : cfg.sound === 'pistol' ? 0.55 : 0.75) + Math.random() * 0.5
-    this.flash.scale.set(fs, fs, fs)
+    if (this.flash) {
+      this.flash.rotation.z = Math.random() * Math.PI
+      const fs = (big ? 1.2 : cfg.sound === 'pistol' ? 0.55 : 0.75) + Math.random() * 0.5
+      this.flash.scale.set(fs, fs, fs)
+    }
     this.gunLight.intensity = big ? 40 : 26
     this.kick = Math.min(1.6, this.kick + 1)
     this.recoilPitch += cfg.recoil + Math.random() * cfg.recoil * 0.5
@@ -1457,7 +1387,9 @@ export class Game {
 
   private applyWeaponVisibility() {
     for (const id of WEAPON_ORDER) this.weaponModels[id].visible = id === this.equipped
-    this.weaponMuzzles[this.equipped].add(this.flash)
+    if (this.flash) {
+      this.weaponMuzzles[this.equipped].add(this.flash)
+    }
   }
 
   private cycleWeapon(dir: number) {
@@ -1736,6 +1668,7 @@ export class Game {
   }
 
   private setFlashOpacity(o: number) {
+    if (!this.flash) return
     this.flash.traverse((c) => {
       const mesh = c as THREE.Mesh
       if (mesh.material) (mesh.material as THREE.MeshBasicMaterial).opacity = o
