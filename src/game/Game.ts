@@ -68,7 +68,7 @@ function detectWeakGPU(): boolean {
 export const LOW_GPU = detectWeakGPU()
 export const PERF_LOW = IS_TOUCH || LOW_GPU
 
-export type WeaponId = 'ak' | 'awp' | 'deagle' | 'p90' | 'uzi' | 'knife'
+export type WeaponId = 'ak' | 'awp' | 'deagle' | 'p90' | 'uzi' | 'm4a4' | 'knife'
 
 export type SoundKind = 'pistol' | 'smg' | 'rifle' | 'sniper' | 'knife'
 
@@ -153,6 +153,20 @@ const WEAPONS: Record<WeaponId, WeaponDef> = {
       boltHandle: true, muzzle: { len: 0.06, r: 0.017 },
     },
   },
+  m4a4: {
+    name: 'M4A4', short: 'M4A4', cat: 'Винтовка', dmg: 23, cd: 0.09, mag: 30, res: 90,
+    auto: true, reload: 3.1, recoil: 0.011, recoilYaw: 0.007, kick: 0.13, base: 0.0032, grow: 0.018,
+    movePen: 0.006, recover: 4.4, speed: 1.0, reward: 300, sound: 'rifle',
+    gun: {
+      body: [0.07, 0.085, 0.48], bodyMat: 'poly', bodyColor: 0x2a2d30,
+      barrelLen: 0.32, barrelR: 0.014, barrelY: 0.02,
+      handguard: [0.065, 0.07, 0.28], handguardMat: 'poly',
+      stock: { l: 0.22, drop: 0.015, mat: 'poly', color: 0x2a2d30 },
+      mag: { w: 0.052, h: 0.18, d: 0.09, tilt: 0.15, z: 0.04 },
+      scope: { len: 0.18, r: 0.025, zoom: 2 },
+      boltHandle: true, muzzle: { len: 0.08, r: 0.019 },
+    },
+  },
   p90: {
     name: 'P90', short: 'P90', cat: 'ПП', dmg: 14, cd: 0.066, mag: 50, res: 100,
     auto: true, reload: 3.3, recoil: 0.008, recoilYaw: 0.007, kick: 0.07, base: 0.005, grow: 0.016,
@@ -174,7 +188,7 @@ const WEAPONS: Record<WeaponId, WeaponDef> = {
   },
 }
 
-export const WEAPON_ORDER: WeaponId[] = ['ak', 'uzi', 'p90', 'awp', 'deagle', 'knife']
+export const WEAPON_ORDER: WeaponId[] = ['ak', 'm4a4', 'uzi', 'p90', 'awp', 'deagle', 'knife']
 
 
 interface Particle { m: THREE.Mesh; v: THREE.Vector3; g: number; life: number; max: number }

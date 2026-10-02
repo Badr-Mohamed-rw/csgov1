@@ -73,6 +73,7 @@ export class Bot {
   private armL = new THREE.Object3D()
   private armR = new THREE.Object3D()
   private headG = new THREE.Object3D()
+  private torsoG = new THREE.Object3D()
   private mats: THREE.MeshStandardMaterial[] = []
   private speed: number
   private strafeDir = Math.random() < 0.5 ? 1 : -1
@@ -99,16 +100,16 @@ export class Bot {
     this.lastX = x
     this.lastZ = z
 
-    // Улучшенные камуфляжные текстуры
-    const camo = camoTexture('#6d6b4f', ['#4c4a35', '#7d7a58', '#3a3a2a', '#8a8462', '#5a5840'])
-    const camoDark = camoTexture('#4a4a3a', ['#33332a', '#5c5a44', '#282820', '#3f3f30'])
+    // Улучшенные камуфляжные текстуры для спецназа
+    const camo = camoTexture('#4a5a3a', ['#3a4a2a', '#5a6a4a', '#2a3a1a', '#6a7a5a', '#4a5a3a'])
+    const camoDark = camoTexture('#3a4a3a', ['#2a3a2a', '#4a5a4a', '#1a2a1a', '#3a4a3a'])
     
-    const mat = (c: number, map?: THREE.Texture, rough = 0.92) => {
+    const mat = (c: number, map?: THREE.Texture, rough = 0.85, metal = 0.05) => {
       const m = new THREE.MeshStandardMaterial({ 
         color: map ? 0xffffff : c, 
         map, 
         roughness: rough,
-        metalness: 0.05
+        metalness: metal
       })
       m.emissive = new THREE.Color(0xff2a00)
       m.emissiveIntensity = 0
@@ -116,17 +117,17 @@ export class Bot {
       return m
     }
     
-    // Материалы с улучшенными параметрами
-    const mUniform = mat(0xffffff, camo, 0.88)
-    const mPants = mat(0xffffff, camoDark, 0.9)
-    const mSkin = mat(0xc98e5f, undefined, 0.75)
-    const mVest = mat(0x2e3226, undefined, 0.85)
-    const mStrap = mat(0x22251c, undefined, 0.8)
-    const mBoot = mat(0x23201b, undefined, 0.85)
-    const mHelmet = mat(0xffffff, camoDark, 0.7)
-    const mGlove = mat(0x2a2d24, undefined, 0.88)
-    const mGun = new THREE.MeshStandardMaterial({ color: 0x2b2e33, roughness: 0.5, metalness: 0.6 })
-    const mWood = new THREE.MeshStandardMaterial({ color: 0x7c4a24, roughness: 0.7, metalness: 0.05 })
+    // Материалы для реалистичного спецназовца
+    const mUniform = mat(0xffffff, camo, 0.85, 0.08)
+    const mPants = mat(0xffffff, camoDark, 0.88, 0.06)
+    const mSkin = mat(0xd4a574, undefined, 0.7, 0.02)
+    const mVest = mat(0x2a3a2a, undefined, 0.8, 0.15) // Тактический жилет
+    const mStrap = mat(0x1a2a1a, undefined, 0.75, 0.1)
+    const mBoot = mat(0x1a1a1a, undefined, 0.82, 0.08)
+    const mHelmet = mat(0x3a4a3a, undefined, 0.65, 0.2) // Шлем
+    const mGlove = mat(0x2a2a2a, undefined, 0.85, 0.05)
+    const mGun = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.45, metalness: 0.7 })
+    const mWood = new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.65, metalness: 0.05 })
 
     const box = (w: number, h: number, d: number, m: THREE.Material) =>
       new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m)

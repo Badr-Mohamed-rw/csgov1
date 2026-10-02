@@ -7,7 +7,7 @@ import {
   onPlatformPause, yandexLang, gameplayStop,
 } from './game/yandex'
 
-const WEAPON_LABELS = ['AK-47', 'UZI', 'P90', 'AWP', 'DEAGLE', 'НОЖ']
+const WEAPON_LABELS = ['AK-47', 'M4A4', 'UZI', 'P90', 'AWP', 'DEAGLE', 'НОЖ']
 
 /* ---------- настройки и прогресс (пункты 1.9, 2.6, 6.2) ---------- */
 export interface Settings { volume: number; sens: number; quality: 'auto' | 'high' | 'low'; lang: Lang }
