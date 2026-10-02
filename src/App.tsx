@@ -401,22 +401,24 @@ export default function App() {
       }
     }
 
-    const game = new Game(mountRef.current, {
-      hud: onHud,
-      score: (a, b) => { setTxt(scoreARef.current, String(a)); setTxt(scoreBRef.current, String(b)) },
-      kills: (k) => setTxt(killsRef.current, String(k)),
-      hitmark: (kind) => {
-        const el = hitRef.current
-        if (!el) return
-        el.classList.toggle('kill', kind === 'kill')
-        el.style.color = kind === 'kill' ? '#e0453a' : kind === 'head' ? '#f2a33c' : '#ffffff'
-        retrigger(el, 'go')
-      },
-      damage: (amount, rel) => {
-        const v = vignetteRef.current
-        if (v) {
-          v.style.transition = 'none'
-          v.style.opacity = String(Math.min(0.9, 0.3 + amount / 40))
+    let game: Game | null = null
+    try {
+      game = new Game(mountRef.current, {
+        hud: onHud,
+        score: (a, b) => { setTxt(scoreARef.current, String(a)); setTxt(scoreBRef.current, String(b)) },
+        kills: (k) => setTxt(killsRef.current, String(k)),
+        hitmark: (kind) => {
+          const el = hitRef.current
+          if (!el) return
+          el.classList.toggle('kill', kind === 'kill')
+          el.style.color = kind === 'kill' ? '#e0453a' : kind === 'head' ? '#f2a33c' : '#ffffff'
+          retrigger(el, 'go')
+        },
+        damage: (amount, rel) => {
+          const v = vignetteRef.current
+          if (v) {
+            v.style.transition = 'none'
+            v.style.opacity = String(Math.min(0.9, 0.3 + amount / 40))
           window.clearTimeout(vignetteTimer.current)
           vignetteTimer.current = window.setTimeout(() => {
             if (v) {
@@ -452,8 +454,22 @@ export default function App() {
     // применяем сохранённые настройки при старте
     const s0 = loadSettings()
     game.setSettings({ volume: s0.volume, sens: s0.sens, quality: s0.quality })
+    } catch (error) {
+      console.error('Failed to initialize game:', error)
+      if (mountRef.current) {
+        mountRef.current.innerHTML = `
+          <div style="color:white;padding:40px;text-align:center;font-family:sans-serif;">
+            <h2 style="color:#f2a33c;">Ошибка инициализации игры</h2>
+            <p>${error instanceof Error ? error.message : 'Неизвестная ошибка'}</p>
+            <button onclick="location.reload()" style="margin-top:20px;padding:10px 20px;background:#f2a33c;color:#0d1218;border:none;border-radius:4px;cursor:pointer;font-size:16px;">
+              Перезагрузить страницу
+            </button>
+          </div>
+        `
+      }
+    }
     return () => {
-      game.dispose()
+      game?.dispose()
       gameRef.current = null
     }
   }, [])
