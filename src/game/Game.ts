@@ -7,6 +7,19 @@ import { buildMap, collideMove, groundSupport, type MapData } from './map'
 import { BOT_NAMES, getLang, t } from './i18n'
 import { gameplayStart, gameplayStop } from './yandex'
 import { loadAK47Model, preloadAK47 } from './AK47Loader'
+
+// Используем Timer вместо Clock (Clock deprecated)
+const createTimer = () => {
+  let lastTime = performance.now()
+  return {
+    getDelta: () => {
+      const now = performance.now()
+      const delta = (now - lastTime) / 1000
+      lastTime = now
+      return delta
+    }
+  }
+}
 import { Bot, type BotHooks } from './bots'
 import { SFX } from './audio'
 
@@ -200,15 +213,15 @@ export class Game {
 
   private container: HTMLElement
   private hooks: GameHooks
-  private renderer: THREE.WebGLRenderer
+  private renderer!: THREE.WebGLRenderer
   private scene = new THREE.Scene()
-  private camera: THREE.PerspectiveCamera
-  private clock = new THREE.Clock()
+  private camera!: THREE.PerspectiveCamera
+  private clock = createTimer()
   private raf = 0
   private time = 0
   private attractT = 0
   private sfx = new SFX()
-  private map: MapData
+  private map!: MapData
 
   // player
   private pos = new THREE.Vector3()
@@ -275,7 +288,7 @@ export class Game {
   private tracers: Tracer[] = []
   private shells: { m: THREE.Mesh; v: THREE.Vector3; rv: THREE.Vector3; life: number }[] = []
   private decals: { m: THREE.Mesh; life: number }[] = []
-  private composer: EffectComposer
+  private composer!: EffectComposer
   private bloomPass: UnrealBloomPass | null = null
   // адаптивное качество: если FPS низкий — дополнительно упрощаем рендер
   private perfFrames = 0
@@ -290,9 +303,9 @@ export class Game {
   private wheelIndex = 0
   private flash?: THREE.Mesh
   private flashT = 0
-  private gunLight: THREE.PointLight
-  private boomLight: THREE.PointLight
-  private boomFlash: THREE.Sprite
+  private gunLight!: THREE.PointLight
+  private boomLight!: THREE.PointLight
+  private boomFlash!: THREE.Sprite
   private boomT = 0
 
   private ray = new THREE.Raycaster()
@@ -304,12 +317,27 @@ export class Game {
     this.container = container
     this.hooks = hooks
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: !PERF_LOW, powerPreference: 'high-performance' })
-    // на слабых GPU (Intel HD 4000 и т.п.) и телефонах снижаем плотность пикселей
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, PERF_LOW ? 1 : 1.75))
-    this.renderer.setSize(container.clientWidth, container.clientHeight)
-    this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = PERF_LOW ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
+    try {
+      this.renderer = new THREE.WebGLRenderer({ antialias: !PERF_LOW, powerPreference: 'high-performance' })
+      // на слабых GPU (Intel HD 4000 и т.п.) и телефонах снижаем плотность пикселей
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, PERF_LOW ? 1 : 1.75))
+      
+      // Проверка размеров контейнера
+      const width = Math.max(1, container.clientWidth)
+      const height = Math.max(1, container.clientHeight)
+      this.renderer.setSize(width, height)
+      
+      this.renderer.shadowMap.enabled = true
+      this.renderer.shadowMap.type = THREE.PCFShadowMap // PCFSoftShadowMap deprecated
+      
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping
+      this.renderer.toneMappingExposure = 1.0
+    } catch (error) {
+      console.error('WebGL initialization failed:', error)
+      // Fallback - показываем сообщение об ошибке
+      container.innerHTML = '<div style="color:white;padding:20px;text-align:center;font-family:sans-serif;"><h2>Ошибка инициализации</h2><p>WebGL не поддерживается или произошла ошибка.</p><p>Попробуйте обновить браузер или включить аппаратное ускорение.</p></div>'
+      throw error // Пробрасываем ошибку чтобы остановить инициализацию
+    }
     container.appendChild(this.renderer.domElement)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.06
@@ -362,8 +390,12 @@ export class Game {
     // Асинхронная загрузка оружия
     this.buildWeapons().then(() => {
       this.flash = this.buildFlash(0.55)
-      this.weaponMuzzles[this.equipped].add(this.flash)
+      if (this.weaponMuzzles[this.equipped]) {
+        this.weaponMuzzles[this.equipped].add(this.flash)
+      }
       this.applyWeaponVisibility()
+    }).catch(error => {
+      console.error('Failed to build weapons:', error)
     })
 
     // pools (на телефонах — меньше объектов)
@@ -815,25 +847,39 @@ export class Game {
   private async buildWeapons() {
     const root = this.weapon
     
-    // Загружаем AK-47 модель
-    const ak47Model = await loadAK47Model()
-    const muzzle = new THREE.Object3D()
-    muzzle.position.set(0, 0.022, -0.69)
-    ak47Model.add(muzzle)
-    
-    this.weaponModels['ak'] = ak47Model
-    this.weaponMuzzles['ak'] = muzzle
-    root.add(ak47Model)
-    ak47Model.visible = false
+    // Загружаем AK-47 модель с fallback
+    try {
+      const ak47Model = await loadAK47Model()
+      const muzzle = new THREE.Object3D()
+      muzzle.position.set(0, 0.022, -0.69)
+      ak47Model.add(muzzle)
+      
+      this.weaponModels['ak'] = ak47Model
+      this.weaponMuzzles['ak'] = muzzle
+      root.add(ak47Model)
+      ak47Model.visible = false
+    } catch (error) {
+      console.warn('Failed to load AK47 model, using fallback:', error)
+      // Fallback - создаём простую модель
+      const { group, muzzle } = this.buildGunModel(WEAPONS['ak'].gun)
+      this.weaponModels['ak'] = group
+      this.weaponMuzzles['ak'] = muzzle
+      root.add(group)
+      group.visible = false
+    }
     
     // Остальное оружие строим процедурно
     for (const id of WEAPON_ORDER) {
       if (id === 'ak') continue // уже загружено
-      const { group, muzzle } = this.buildGunModel(WEAPONS[id].gun)
-      this.weaponModels[id] = group
-      this.weaponMuzzles[id] = muzzle
-      root.add(group)
-      group.visible = false
+      try {
+        const { group, muzzle } = this.buildGunModel(WEAPONS[id].gun)
+        this.weaponModels[id] = group
+        this.weaponMuzzles[id] = muzzle
+        root.add(group)
+        group.visible = false
+      } catch (error) {
+        console.error(`Failed to build weapon ${id}:`, error)
+      }
     }
     
     root.position.set(0.24, -0.22, -0.45)

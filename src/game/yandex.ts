@@ -65,12 +65,12 @@ export function initYandex(): Promise<YSDK | null> {
     try {
       let Ya = await waitYaGames()
       if (!Ya) {
-        const ok = await loadScript('/sdk.js')
-        if (ok) Ya = await waitYaGames()
-      }
-      if (!Ya) {
-        const ok = await loadScript('https://sdk.games.s3.yandex.net/sdk.js')
-        if (ok) Ya = await waitYaGames()
+        // Пробуем загрузить SDK только если мы на yandex.games
+        const isYandexDomain = window.location.hostname.includes('yandex')
+        if (isYandexDomain) {
+          const ok = await loadScript('/sdk.js')
+          if (ok) Ya = await waitYaGames()
+        }
       }
       if (!Ya) return null
       ysdk = await Ya.init()
@@ -78,7 +78,8 @@ export function initYandex(): Promise<YSDK | null> {
       initDone = true
       // игра готова к запуску
       try { ysdk.features?.LoadingAPI?.ready() } catch { /* noop */ }
-    } catch {
+    } catch (error) {
+      console.warn('Yandex SDK initialization failed:', error)
       ysdk = null
     }
     return ysdk

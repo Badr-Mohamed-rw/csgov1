@@ -43,8 +43,10 @@ export async function loadAK47Model(): Promise<THREE.Group> {
       },
       (progress) => {
         // Прогресс загрузки (можно добавить UI индикатор)
-        const percent = (progress.loaded / progress.total) * 100
-        console.log(`AK47 loading: ${percent.toFixed(1)}%`)
+        if (progress.total > 0) {
+          const percent = Math.min(100, (progress.loaded / progress.total) * 100)
+          console.log(`AK47 loading: ${percent.toFixed(1)}%`)
+        }
       },
       (error) => {
         console.error('Failed to load AK47 model:', error)
